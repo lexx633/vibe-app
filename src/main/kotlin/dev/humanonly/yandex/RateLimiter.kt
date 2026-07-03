@@ -23,6 +23,11 @@ class RateLimiter(
     private val maxBackoff: Double = 16.0,
     /** Сколько подряд успехов затухают backoff на один шаг вниз. */
     private val successesToDecay: Int = 3,
+    /**
+     * Доп. множитель интервала поверх backoff (adaptive-политика по времени ответа + капча-cooldown,
+     * см. [AdaptiveThrottle]). Дефолт 1.0 — поведение не меняется. Итог: base × backoff × этот множитель.
+     */
+    private val extraIntervalMultiplier: () -> Double = { 1.0 },
 ) {
     init {
         require(baseIntervalNanos > 0) { "baseIntervalNanos должен быть > 0" }
@@ -41,7 +46,7 @@ class RateLimiter(
      * Спит через инжектированный [sleeper] ровно недостающую дельту.
      */
     fun acquire() {
-        val interval = (baseIntervalNanos * backoff).toLong()
+        val interval = (baseIntervalNanos * backoff * extraIntervalMultiplier()).toLong()
         val last = lastPermitNanos
         if (last != null) {
             val elapsed = nowNanos() - last
