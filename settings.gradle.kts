@@ -1,1 +1,1 @@
-rootProject.name = "humanonly-app"
+rootProject.name = "vibe-app"
