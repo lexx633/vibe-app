@@ -1,0 +1,15 @@
+{
+  "result": {
+    "downloadInfo": {
+      "codec": "flac-mp4",
+      "quality": "lossless",
+      "bitrate": 0,
+      "urls": [
+        "https://strm-fake.example.test/fake/blob?sig=FAKE",
+        "https://strm-fake2.example.test/fake/blob?sig=FAKE"
+      ],
+      "key": "000102030405060708090a0b0c0d0e0f",
+      "unknownFutureField": "ignored"
+    }
+  }
+}

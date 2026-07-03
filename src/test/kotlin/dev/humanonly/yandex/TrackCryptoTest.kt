@@ -15,7 +15,7 @@ import kotlin.random.Random
  */
 class TrackCryptoTest {
 
-    private val keyHex = "8f03b4e837b7102fc832f7b9aa21cc2f" // 16 байт → AES-128
+    private val keyHex = "000102030405060708090a0b0c0d0e0f" // 16 байт → AES-128
     private val block = 16
 
     private fun encryptFull(plain: ByteArray): ByteArray {
