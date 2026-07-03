@@ -37,6 +37,17 @@ data class DownloadInfo(
     val key: String,
 )
 
+// ── account/status (только uid, для эндпоинта лайков) ────────────────────────
+
+@Serializable
+data class AccountStatusResponse(val result: AccountStatusResult)
+
+@Serializable
+data class AccountStatusResult(val account: Account)
+
+@Serializable
+data class Account(val uid: Long? = null)
+
 // ── users/likes/tracks ───────────────────────────────────────────────────────
 
 @Serializable

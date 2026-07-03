@@ -19,6 +19,14 @@ class YandexClient(
         return YandexJson.decodeFromString(GetFileInfoResponse.serializer(), body).result.downloadInfo
     }
 
+    /** uid аккаунта (для эндпоинта лайков). */
+    fun accountUid(): Long {
+        val req = Endpoints.accountStatus(config)
+        val body = call(req)
+        return YandexJson.decodeFromString(AccountStatusResponse.serializer(), body).result.account.uid
+            ?: error("account.uid отсутствует в ответе")
+    }
+
     /** id лайкнутых треков. */
     fun likedTrackIds(userId: String): List<String> {
         val req = Endpoints.likes(config, userId)

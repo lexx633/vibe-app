@@ -32,6 +32,10 @@ object Endpoints {
         return Request("${config.baseUrl}/get-file-info", params)
     }
 
+    /** Статус аккаунта (нужен uid для эндпоинта лайков). Подпись не требуется. */
+    fun accountStatus(config: YandexConfig): Request =
+        Request("${config.baseUrl}/account/status", emptyMap())
+
     /** Список лайков. Подпись не требуется — обычный авторизованный GET. */
     fun likes(config: YandexConfig, userId: String): Request =
         Request("${config.baseUrl}/users/$userId/likes/tracks", emptyMap())

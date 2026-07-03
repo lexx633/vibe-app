@@ -14,6 +14,8 @@ class YandexConfig(
     val baseUrl: String = DEFAULT_BASE_URL,
     /** Значение X-Yandex-Music-Client; часть клиентов ЯМ требует его. Не секрет. */
     val clientHeader: String? = null,
+    /** User-Agent: реальные клиенты ЯМ его шлют, иначе часть эндпоинтов отвечает отказом. Не секрет. */
+    val userAgent: String = DEFAULT_USER_AGENT,
 ) {
     init {
         require(accessToken.isNotBlank()) { "accessToken пуст" }
@@ -22,6 +24,7 @@ class YandexConfig(
     /** Обязательные заголовки авторизованного запроса к API ЯМ. */
     fun authHeaders(): Map<String, String> = buildMap {
         put("Authorization", "OAuth $accessToken")
+        put("User-Agent", userAgent)
         if (clientHeader != null) put("X-Yandex-Music-Client", clientHeader)
     }
 
@@ -31,5 +34,7 @@ class YandexConfig(
 
     companion object {
         const val DEFAULT_BASE_URL = "https://api.music.yandex.net"
+        /** Дефолтный UA реального Android-клиента ЯМ (не секрет; нужен ряду эндпоинтов). */
+        const val DEFAULT_USER_AGENT = "YandexMusicAndroid/24023621"
     }
 }
