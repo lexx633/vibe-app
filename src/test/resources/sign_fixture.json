@@ -1,0 +1,19 @@
+{
+  "sign_key": "p93jhgh689SBReK6ghtw62",
+  "params_order": [
+    "ts",
+    "trackId",
+    "quality",
+    "codecs",
+    "transports"
+  ],
+  "params": {
+    "ts": 1700000000,
+    "trackId": "67674353",
+    "quality": "lossless",
+    "codecs": "flac,flac-mp4,mp3,aac,he-aac,aac-mp4,he-aac-mp4",
+    "transports": "encraw"
+  },
+  "message": "170000000067674353losslessflacflac-mp4mp3aache-aacaac-mp4he-aac-mp4encraw",
+  "expected_sign": "/ne2d33T0LFWORpWiBI/R8i0nJLb51IX6Hr9jjNFHAI"
+}

@@ -1,0 +1,32 @@
+# Секреты — НИКОГДА в git
+.env
+.env.*
+!.env.example
+*.token
+*token*.txt
+secrets/
+.secrets/
+credentials*
+local.properties
+
+# Аудио/бинарные артефакты
+*.enc
+*.flac
+*.mp4
+*.part
+*.apk
+*.keystore
+
+# Gradle / сборка
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Android
+*.iml
+.idea/
+captures/
+
+# ОС
+.DS_Store
+Thumbs.db
