@@ -85,6 +85,26 @@ class LibraryCleanupTest {
         assertEquals(listOf(0 to CleanupBucket.DEAD, 1 to CleanupBucket.CLEAN), seen)
     }
 
+    @Test
+    fun `scan останавливается кооперативно по shouldStop — план частичный`() {
+        val classifier = classifierOf(
+            "a" to CleanupBucket.CLEAN,
+            "b" to CleanupBucket.CLEAN,
+            "c" to CleanupBucket.CLEAN,
+        )
+        var scanned = 0
+        // Просим остановиться после первого просканированного трека. shouldStop проверяется ДО классификации:
+        // «a» проходит (scanned=0), затем «b» упирается в stop (scanned=1) — классификатора «b»/«c» не будет.
+        val plan = cleanup(RecordingLibrary()).scan(
+            listOf("a", "b", "c"),
+            classifier,
+            shouldStop = { scanned >= 1 },
+        ) { _, _, _ -> scanned++ }
+
+        assertEquals(1, plan.items.size)
+        assertEquals("a", plan.items.first().trackId)
+    }
+
     // ── хард-правило 5: без confirm/бэкапа деструктив не идёт ─────────────────
 
     @Test

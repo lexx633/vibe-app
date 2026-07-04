@@ -39,6 +39,9 @@ class CleanupActivity : Activity() {
     private lateinit var out: TextView
     private var lastPlan: CleanupPlan? = null
 
+    /** Флаг кооперативной остановки скана (кнопка «Стоп скан»). Скан проверяет его перед каждым треком. */
+    @Volatile private var stopScan = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(buildUi())
@@ -56,6 +59,7 @@ class CleanupActivity : Activity() {
         // 1 — скан: безопасен, акк не трогается; здесь же снимается бэкап лайков.
         root.addView(sectionHeader("1 · Скан (dry-run — акк не трогаем)"))
         root.addView(button("Сканировать библиотеку") { onScan() })
+        root.addView(button("Стоп скан", indent = true) { onStopScan() })
 
         // 2 — применение: под-шаги с отступом; ВЫПОЛНИТЬ — деструктив (красный).
         root.addView(sectionHeader("2 · Применить чистку"))
@@ -97,11 +101,18 @@ class CleanupActivity : Activity() {
     // ── 1. скан (dry-run) ─────────────────────────────────────────────────────
 
     private fun onScan() {
-        log("Скан… (один запрос метаданных на трек, ≤1 rps — может идти долго)")
+        stopScan = false
+        log("Скан… (один запрос метаданных на трек, ≤1 rps — может идти долго). «Стоп скан» прервёт после текущего трека.")
         Thread {
             val report = runCatching { runScan() }.getOrElse { "ОШИБКА: ${it.message}" }
             log(report)
         }.start()
+    }
+
+    /** Кооперативно остановить идущий скан: следующий трек не сканируется. Прогресс чистых уже в базе. */
+    private fun onStopScan() {
+        stopScan = true
+        log("Останавливаю скан после текущего трека… (прогресс сохранён, повторный скан продолжит с места)")
     }
 
     private fun runScan(): String {
@@ -129,7 +140,7 @@ class CleanupActivity : Activity() {
 
         val classifier = ServiceLocator.cleanupClassifier(this, client)
         val cleanup = ServiceLocator.libraryCleanup(this, db, client, aiPlaylistKind = "-", grayPlaylistKind = "-")
-        val plan = cleanup.scan(toScan, classifier) { i, trackId, bucket ->
+        val plan = cleanup.scan(toScan, classifier, shouldStop = { stopScan }) { i, trackId, bucket ->
             // Чистый лайк сразу помечаем просканированным (last_scan) — повторный прогон его пропустит.
             // Мёртвые/ИИ/серые НЕ помечаем здесь: их отметит SqlCleanupSink на ВЫПОЛНИТЬ (до этого они
             // остаются «новыми», чтобы не потеряться, если чистку не довели до конца).
@@ -137,8 +148,10 @@ class CleanupActivity : Activity() {
             if (i % 25 == 0) log("Скан… $i/${toScan.size} (пропущено ранее: $skipped)")
         }
         lastPlan = plan
+        val stopped = stopScan
 
         return buildString {
+            if (stopped) appendLine("⏹ СКАН ОСТАНОВЛЕН — просканировано ${plan.items.size}/${toScan.size} новых. Прогресс чистых сохранён, повторный скан продолжит с места.")
             appendLine("Лайков всего: ${liked.size} (новых к скану: ${toScan.size}, пропущено ранее: $skipped)")
             appendLine("————————————————————")
             appendLine("мёртвые (снять лайк):        ${plan.dead.size}")

@@ -43,10 +43,15 @@ class LibraryCleanup(
     fun scan(
         likedTrackIds: Iterable<String>,
         classifier: TrackClassifier,
+        shouldStop: () -> Boolean = { false },
         onScanned: (index: Int, trackId: String, bucket: CleanupBucket) -> Unit = { _, _, _ -> },
     ): CleanupPlan {
         val items = ArrayList<CleanupScanItem>()
-        likedTrackIds.forEachIndexed { i, trackId ->
+        for ((i, trackId) in likedTrackIds.withIndex()) {
+            // Кооперативная остановка (кнопка «Стоп скан»): проверяем ДО классификации, чтобы после запроса
+            // «стоп» не уходил ещё один запрос к ЯМ. Уже просканированные треки сохранены вызывающим (чистые
+            // помечены last_scan) — повторный скан продолжит с места (инкрементально, хард-правило 7).
+            if (shouldStop()) break
             val bucket = classifier.classify(trackId)
             items += CleanupScanItem(trackId, bucket)
             onScanned(i, trackId, bucket)
