@@ -67,6 +67,7 @@ class MainActivity : Activity() {
         root.addView(button("Запустить прогон сейчас") { onRunNow() })
         root.addView(button("Ревью серой зоны") { onOpenReview() })
         root.addView(button("Media3 FLAC smoke") { onOpenSmoke() })
+        root.addView(button("Архив §F6 smoke (Диск)") { onOpenArchiveSmoke() })
         root.addView(button("Обновить статус") { refresh() })
 
         return ScrollView(this).apply { addView(root) }
@@ -102,6 +103,8 @@ class MainActivity : Activity() {
     private fun onOpenReview() = startActivity(android.content.Intent(this, ReviewActivity::class.java))
 
     private fun onOpenSmoke() = startActivity(android.content.Intent(this, SmokeActivity::class.java))
+
+    private fun onOpenArchiveSmoke() = startActivity(android.content.Intent(this, ArchiveSmokeActivity::class.java))
 
     /** Собирает статус вне UI-потока (Keystore + Future WorkManager) и постит в [status]. */
     private fun refresh() {

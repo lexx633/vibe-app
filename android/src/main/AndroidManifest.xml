@@ -46,6 +46,12 @@
         <activity
             android:name="dev.humanonly.android.SmokeActivity"
             android:exported="false" />
+
+        <!-- Живой end-to-end smoke §F6: скачать lossless из ЯМ → демукс → залить .flac на Яндекс.Диск
+             (реальная цепочка DownloadStage+Archiver). Не LAUNCHER — открывается из MainActivity. -->
+        <activity
+            android:name="dev.humanonly.android.ArchiveSmokeActivity"
+            android:exported="false" />
     </application>
 
 </manifest>
