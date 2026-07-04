@@ -43,4 +43,16 @@ object Endpoints {
     /** Метаданные трека(ов). Подпись не требуется. */
     fun trackMetadata(config: YandexConfig, trackId: String): Request =
         Request("${config.baseUrl}/tracks/$trackId", emptyMap())
+
+    // ── мутирующие (POST form) ────────────────────────────────────────────────
+    // Формы по конвенции community-клиента yandex-music (track-ids). ХАРД-ПРАВИЛО 9: выверить точные
+    // пути/поля по референс-репо перед первым живым вызовом; здесь — только форма запроса (офлайн-тест).
+
+    /** Поставить дизлайк треку: `POST users/{uid}/dislikes/tracks/add-multiple` (form `track-ids`). */
+    fun dislikeAdd(config: YandexConfig, userId: String, trackId: String): Request =
+        Request("${config.baseUrl}/users/$userId/dislikes/tracks/add-multiple", mapOf("track-ids" to trackId))
+
+    /** Снять дизлайк: `POST users/{uid}/dislikes/tracks/remove` (form `track-ids`). Откат «не ИИ». */
+    fun dislikeRemove(config: YandexConfig, userId: String, trackId: String): Request =
+        Request("${config.baseUrl}/users/$userId/dislikes/tracks/remove", mapOf("track-ids" to trackId))
 }

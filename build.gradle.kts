@@ -16,6 +16,10 @@ dependencies {
     testImplementation(platform("org.junit:junit-bom:5.11.3"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+
+    // ТОЛЬКО для тестов: реальный SQLite на JVM, чтобы гонять Schema.DDL и SQL-адаптеры против живой БД
+    // (ловит опечатки в SQL). В APK НЕ входит — Android поставляет свой SQLite через framework.
+    testImplementation("org.xerial:sqlite-jdbc:3.46.1.3")
 }
 
 kotlin {

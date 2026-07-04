@@ -30,6 +30,9 @@ class TrackDownloaderTest {
         override fun getJson(url: String, params: Map<String, String>, headers: Map<String, String>): String =
             error("не используется в этом тесте")
 
+        override fun postForm(url: String, form: Map<String, String>, headers: Map<String, String>): String =
+            error("не используется в этом тесте")
+
         override fun getBytes(url: String, headers: Map<String, String>): ByteArray = enc.copyOf()
 
         override fun getRange(url: String, from: Long, to: Long?, headers: Map<String, String>): ByteArray {

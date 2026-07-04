@@ -42,10 +42,37 @@ class YandexClient(
         return YandexJson.decodeFromString(TrackMetadataResponse.serializer(), body).result
     }
 
+    /**
+     * Поставить дизлайк треку (мутирующее — идёт через лимитер, хард-правило 7). Возвращает `true`
+     * при подтверждённом 2xx-ответе. ЯМ надёжно не сообщает «уже так», поэтому success трактуем как
+     * применённое (идемпотентно, §6.2). userId — uid аккаунта ([accountUid]).
+     */
+    fun dislikeTrack(userId: String, trackId: String): Boolean {
+        callPost(Endpoints.dislikeAdd(config, userId, trackId))
+        return true
+    }
+
+    /** Снять дизлайк (откат «не ИИ», обратимо). true при подтверждённом 2xx. */
+    fun undislikeTrack(userId: String, trackId: String): Boolean {
+        callPost(Endpoints.dislikeRemove(config, userId, trackId))
+        return true
+    }
+
     private fun call(req: Endpoints.Request): String {
         rateLimiter.acquire()
         return try {
             transport.getJson(req.url, req.params, config.authHeaders())
+                .also { rateLimiter.onSuccess() }
+        } catch (e: YandexThrottleException) {
+            rateLimiter.onThrottled()
+            throw e
+        }
+    }
+
+    private fun callPost(req: Endpoints.Request): String {
+        rateLimiter.acquire()
+        return try {
+            transport.postForm(req.url, req.params, config.authHeaders())
                 .also { rateLimiter.onSuccess() }
         } catch (e: YandexThrottleException) {
             rateLimiter.onThrottled()

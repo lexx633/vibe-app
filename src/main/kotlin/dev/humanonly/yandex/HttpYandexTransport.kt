@@ -43,6 +43,23 @@ class HttpYandexTransport(
         return body
     }
 
+    override fun postForm(url: String, form: Map<String, String>, headers: Map<String, String>): String {
+        val body = form.entries.joinToString("&") { (k, v) -> "${enc(k)}=${enc(v)}" }
+        val builder = HttpRequest.newBuilder(URI.create(url)).timeout(requestTimeout)
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+        headers.forEach { (k, v) -> builder.header(k, v) }
+        val resp = client.send(builder.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
+        val text = resp.body()
+        if (resp.statusCode() == 429 || resp.statusCode() == 403) {
+            throw YandexThrottleException(resp.statusCode(), "throttled: HTTP ${resp.statusCode()}")
+        }
+        if (resp.statusCode() !in 200..299) {
+            error("HTTP ${resp.statusCode()} для POST-запроса")
+        }
+        return text
+    }
+
     override fun getBytes(url: String, headers: Map<String, String>): ByteArray =
         readBytes(url, headers, range = null)
 

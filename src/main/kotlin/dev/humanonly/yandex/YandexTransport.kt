@@ -13,6 +13,12 @@ interface YandexTransport {
     /** GET url с query-параметрами и заголовками → тело как JSON-строка. */
     fun getJson(url: String, params: Map<String, String>, headers: Map<String, String>): String
 
+    /**
+     * POST url с form-urlencoded телом ([form]) → тело ответа как JSON-строка. Для мутирующих
+     * эндпоинтов ЯМ (дизлайк/плейлист). Троттлинг → [YandexThrottleException] (как в [getJson]).
+     */
+    fun postForm(url: String, form: Map<String, String>, headers: Map<String, String>): String
+
     /** GET url → сырые байты (аудио-блоб CDN). */
     fun getBytes(url: String, headers: Map<String, String> = emptyMap()): ByteArray
 
