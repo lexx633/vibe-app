@@ -40,6 +40,12 @@
         <activity
             android:name="dev.humanonly.android.ReviewActivity"
             android:exported="false" />
+
+        <!-- Живой on-device smoke Media3-демуксера (§F6): демукс flac-mp4 → raw .flac и сверка упаковки
+             STREAMINFO с платформенным MediaExtractor. Не LAUNCHER — открывается из MainActivity. -->
+        <activity
+            android:name="dev.humanonly.android.SmokeActivity"
+            android:exported="false" />
     </application>
 
 </manifest>
