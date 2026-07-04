@@ -84,6 +84,17 @@ tasks.register<JavaExec>("livePlaylistMove") {
     classpath = sourceSets["test"].runtimeClasspath
 }
 
+// Живая ПОЛНАЯ цепочка §F4 MOVE_TO_PLAYLIST (хард-правило 5): реальный dispatcher — дизлайк (снимает лайк)
+// + перенос в СОЗДАННЫЙ инструментом плейлист «Определены как ИИ треки». Dry-run по умолчанию (план+бэкап,
+// без мутаций); --execute = бэкап→создать плейлист→цепочка→верификация→авто-откат→удалить плейлист (тест-акк).
+// gradlew liveAiPlaylistMove --args="<токен> [--execute]"
+tasks.register<JavaExec>("liveAiPlaylistMove") {
+    group = "verification"
+    description = "Живая цепочка §F4 MOVE_TO_PLAYLIST: dry-run по умолчанию; --execute = дизлайк+перенос+авто-откат (тест-акк, ДА)"
+    mainClass.set("dev.humanonly.yandex.tools.LiveAiPlaylistMoveKt")
+    classpath = sourceSets["test"].runtimeClasspath
+}
+
 // Живой smoke архивации на Яндекс.Диск (§F6, §9): сквозной Archiver → YandexDiskBlobStore/ManifestStore
 // в папку /Бекап/vibe. Dry-run по умолчанию (только проверка токена/доступа); --execute = заливка
 // тест-блоба + manifest.json (файл ОСТАЁТСЯ на Диске). Токен-файл через --args, НЕ логируется.
