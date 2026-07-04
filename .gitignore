@@ -9,6 +9,11 @@ secrets/
 credentials*
 local.properties
 
+# GPL-данные — НИКОГДА в публичный репо (CLAUDE.md §10, копилефт): база AI-артистов
+# slopless грузится в рантайме отдельной поставкой, в APK попадает только локально.
+slopless.json
+**/assets/slopless.json
+
 # Аудио/бинарные артефакты
 *.enc
 *.flac

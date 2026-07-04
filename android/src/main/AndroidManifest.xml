@@ -52,6 +52,12 @@
         <activity
             android:name="dev.humanonly.android.ArchiveSmokeActivity"
             android:exported="false" />
+
+        <!-- Живой детект-smoke (§10): реальный каскад slopless+метаданные на одном треке → вердикт
+             ИИ/human на экране. Не LAUNCHER — открывается из MainActivity. -->
+        <activity
+            android:name="dev.humanonly.android.DetectSmokeActivity"
+            android:exported="false" />
     </application>
 
 </manifest>

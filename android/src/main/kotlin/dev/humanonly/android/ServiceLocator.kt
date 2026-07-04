@@ -133,6 +133,20 @@ object ServiceLocator {
     fun tokenStore(ctx: Context): TokenStore = KeystoreTokenStore(ctx)
 
     /**
+     * База AI-артистов slopless (hard gate каскада 0). Публичный доступ для детект-smoke на устройстве —
+     * та же загрузка, что в плановом прогоне ([loadGate]): filesDir → assets → пустой гейт. GPL-данные
+     * грузятся в рантайме, в публичный репо не вендорятся (CLAUDE.md §10).
+     */
+    fun sloplessGate(ctx: Context): SloplessGate = loadGate(ctx)
+
+    /**
+     * Каскад детекции MVP (hard gate slopless + метаданные; аудио-слой отложён — [AudioScorer.Unavailable]).
+     * Тот же состав, что в [build] для планового прогона — детект-smoke меряет ровно продакшн-путь.
+     */
+    fun detectionCascade(ctx: Context): DetectionCascade =
+        DetectionCascade(loadGate(ctx), MetadataScorer())
+
+    /**
      * Живой клиент ЯМ из сохранённого токена, либо null если токена нет (тогда live-стадии пропускаются).
      * Токен в лог не пишем — при диагностике только `tokenStore(ctx).fingerprint()`.
      */
