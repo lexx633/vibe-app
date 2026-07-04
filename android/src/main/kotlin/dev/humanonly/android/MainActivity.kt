@@ -77,15 +77,20 @@ class MainActivity : Activity() {
         }
         root.addView(tokenInput)
 
+        root.addView(sectionHeader("Токен ЯМ"))
         root.addView(button("Сохранить токен") { onSaveToken() })
-        root.addView(button("Очистить токен") { onClearToken() })
-        root.addView(button("Запустить прогон сейчас") { onRunNow() })
-        root.addView(button("Проверить трек на ИИ (детект-smoke)") { onOpenDetect() })
-        root.addView(button("Чистка библиотеки (мёртвые + ИИ)") { onOpenCleanup() })
+        root.addView(button("Очистить токен", danger = true) { onClearToken() })
+
+        root.addView(sectionHeader("Основное"))
+        root.addView(button("Чистка библиотеки") { onOpenCleanup() })
         root.addView(button("Ревью серой зоны") { onOpenReview() })
-        root.addView(button("Media3 FLAC smoke") { onOpenSmoke() })
-        root.addView(button("Архив §F6 smoke (Диск)") { onOpenArchiveSmoke() })
+        root.addView(button("Запустить прогон сейчас") { onRunNow() })
         root.addView(button("Обновить статус") { refresh() })
+
+        root.addView(sectionHeader("Диагностика (smoke)"))
+        root.addView(button("Проверить трек на ИИ", indent = true) { onOpenDetect() })
+        root.addView(button("Media3 FLAC smoke", indent = true) { onOpenSmoke() })
+        root.addView(button("Архив §F6 smoke (Диск)", indent = true) { onOpenArchiveSmoke() })
 
         return ScrollView(this).apply { addView(root) }
     }
@@ -153,10 +158,22 @@ class MainActivity : Activity() {
         }.trimEnd()
     }
 
-    private fun button(label: String, onClick: () -> Unit) = Button(this).apply {
+    /** Заголовок секции (жирный) — группирует кнопки на операторской панели. */
+    private fun sectionHeader(text: String) = TextView(this).apply {
+        this.text = text
+        textSize = 13f
+        setTypeface(typeface, android.graphics.Typeface.BOLD)
+        setPadding(0, dp(16), 0, dp(4))
+    }
+
+    /** Кнопка. [indent] — вторичное (отступ, напр. smoke); [danger] — деструктив (красноватый фон). */
+    private fun button(label: String, indent: Boolean = false, danger: Boolean = false, onClick: () -> Unit) = Button(this).apply {
         text = label
         gravity = Gravity.CENTER
-        layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+        layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+            if (indent) marginStart = dp(24)
+        }
+        if (danger) backgroundTintList = android.content.res.ColorStateList.valueOf(0xFFC62828.toInt())
         setOnClickListener { onClick() }
     }
 

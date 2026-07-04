@@ -51,18 +51,27 @@ class CleanupActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad, pad, pad)
         }
-        root.addView(title("Чистка библиотеки (мёртвые + ИИ)"))
-        root.addView(hint("Скан → счётчики (акк не трогаем; чистые помечаем просканированными локально — 2-й прогон их пропустит). Потом плейлисты. Потом ВЫПОЛНИТЬ (деструктив, с бэкапом)."))
+        root.addView(title("Чистка библиотеки"))
 
-        root.addView(button("1. Скан библиотеки (dry-run)") { onScan() })
-        root.addView(button("2. Создать плейлисты «детект ИИ» + «непонятно»") { onCreatePlaylists() })
-        root.addView(button("3. ВЫПОЛНИТЬ чистку (деструктив)") { onExecute() })
-        root.addView(hint("— уборка после ревью —"))
-        root.addView(button("Удалить плейлист «детект ИИ»") { onDeletePlaylist(ai = true) })
-        root.addView(button("Удалить плейлист «непонятно»") { onDeletePlaylist(ai = false) })
-        root.addView(hint("— откат (F7): вернуть лайки из последнего бэкапа —"))
-        root.addView(button("ОТКАТ (dry-run): план восстановления лайков") { onRestore(execute = false) })
-        root.addView(button("ОТКАТ: вернуть лайки (execute)") { onRestore(execute = true) })
+        // 1 — скан: безопасен, акк не трогается; здесь же снимается бэкап лайков.
+        root.addView(sectionHeader("1 · Скан (dry-run — акк не трогаем)"))
+        root.addView(button("Сканировать библиотеку") { onScan() })
+
+        // 2 — применение: под-шаги с отступом; ВЫПОЛНИТЬ — деструктив (красный).
+        root.addView(sectionHeader("2 · Применить чистку"))
+        root.addView(hint("Сначала создай плейлисты, затем ВЫПОЛНИТЬ. Бэкап лайков снимется сам (хард-правило 5)."))
+        root.addView(button("Создать плейлисты «детект ИИ» + «непонятно»", indent = true) { onCreatePlaylists() })
+        root.addView(button("ВЫПОЛНИТЬ чистку", indent = true, danger = true) { onExecute() })
+
+        // 3 — откат: план (dry-run) → под-шаг возврата лайков (мутирует акк).
+        root.addView(sectionHeader("3 · Откат (F7 — вернуть лайки из бэкапа)"))
+        root.addView(button("План отката (dry-run)") { onRestore(execute = false) })
+        root.addView(button("Вернуть лайки из бэкапа", indent = true, danger = true) { onRestore(execute = true) })
+
+        // уборка плейлистов — вторичное, под отступом.
+        root.addView(sectionHeader("Плейлисты (уборка после ревью)"))
+        root.addView(button("Удалить «детект ИИ»", indent = true) { onDeletePlaylist(ai = true) })
+        root.addView(button("Удалить «непонятно»", indent = true) { onDeletePlaylist(ai = false) })
 
         out = TextView(this).apply {
             textSize = 12f
@@ -282,10 +291,25 @@ class CleanupActivity : Activity() {
         this.text = text; textSize = 12f; setPadding(0, dp(8), 0, dp(4))
     }
 
-    private fun button(label: String, onClick: () -> Unit) = Button(this).apply {
+    /** Заголовок секции (жирный) — визуально разбивает список кнопок на группы. */
+    private fun sectionHeader(text: String) = TextView(this).apply {
+        this.text = text
+        textSize = 13f
+        setTypeface(typeface, android.graphics.Typeface.BOLD)
+        setPadding(0, dp(16), 0, dp(4))
+    }
+
+    /**
+     * Кнопка. [indent] — под-шаг (отступ слева, чтобы читалась вложенность в главное действие секции).
+     * [danger] — деструктив (красноватый фон): ВЫПОЛНИТЬ чистку / возврат лайков.
+     */
+    private fun button(label: String, indent: Boolean = false, danger: Boolean = false, onClick: () -> Unit) = Button(this).apply {
         text = label
         gravity = Gravity.CENTER
-        layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+        layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+            if (indent) marginStart = dp(24)
+        }
+        if (danger) backgroundTintList = android.content.res.ColorStateList.valueOf(0xFFC62828.toInt())
         setOnClickListener { onClick() }
     }
 
