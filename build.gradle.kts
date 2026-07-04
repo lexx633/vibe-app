@@ -94,3 +94,14 @@ tasks.register<JavaExec>("liveDiskArchive") {
     mainClass.set("dev.humanonly.archive.tools.LiveDiskArchiveKt")
     classpath = sourceSets["test"].runtimeClasspath
 }
+
+// Живой smoke архивации в S3-совместимое хранилище (§9: B2/S3/MinIO/R2, хард-правило 4 — нужны ключи).
+// Dry-run по умолчанию (HEAD-проба: подпись/ключи валидны); --execute = заливка тест-блоба в бакет.
+// Конфиг (endpoint/bucket/region/accessKeyId/secretAccessKey) через --args, ключи НЕ логируются.
+// gradlew liveS3Archive --args="<путь к json-конфигу> [--execute]"
+tasks.register<JavaExec>("liveS3Archive") {
+    group = "verification"
+    description = "Живая архивация в S3/B2: dry-run по умолчанию (HEAD-проба подписи); --execute = заливка тест-блоба (нужны ключи)"
+    mainClass.set("dev.humanonly.archive.tools.LiveS3ArchiveKt")
+    classpath = sourceSets["test"].runtimeClasspath
+}
