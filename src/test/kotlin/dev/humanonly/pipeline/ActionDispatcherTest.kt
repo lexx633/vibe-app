@@ -22,6 +22,7 @@ class ActionDispatcherTest {
         override fun dislike(trackId: String): Boolean { calls += ActionOp.DISLIKE to trackId; return changed }
         override fun undislike(trackId: String): Boolean { calls += ActionOp.UNDISLIKE to trackId; return changed }
         override fun like(trackId: String): Boolean { calls += ActionOp.RELIKE to trackId; return changed }
+        override fun unlike(trackId: String): Boolean = changed
         override fun addToPlaylist(trackId: String, playlistKind: String): Boolean {
             calls += ActionOp.ADD_TO_PLAYLIST to trackId; return changed
         }

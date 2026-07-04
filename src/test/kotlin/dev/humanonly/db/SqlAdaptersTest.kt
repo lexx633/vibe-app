@@ -305,6 +305,36 @@ class SqlAdaptersTest {
         assertTrue(scalarLong("SELECT COUNT(*) AS v FROM audit_log") >= 4)
     }
 
+    // ── чистка живой библиотеки (SqlCleanupSink) ──────────────────────────────
+
+    @Test
+    fun `SqlCleanupSink пишет is_dead, moved_to_playlist, review_required и audit`() {
+        repo.upsertDiscovered(
+            listOf(DiscoveredTrack("dead1", "a0"), DiscoveredTrack("ai1", "a1"), DiscoveredTrack("gray1", "a2")),
+        )
+        val sink = SqlCleanupSink(repo)
+
+        sink.onDead("dead1", TrackState.UNKNOWN, unliked = true)
+        sink.onAiMoved("ai1", disliked = true, added = true)
+        sink.onGrayReview("gray1", unliked = true, added = true)
+
+        // dead → is_dead=1, помечен просканированным (last_scan)
+        assertEquals(1L, scalarLong("SELECT is_dead AS v FROM track WHERE yandex_track_id='dead1'"))
+        assertTrue(scalarLong("SELECT COUNT(*) AS v FROM track WHERE yandex_track_id='dead1' AND last_scan IS NOT NULL") == 1L)
+        // ai → verdict=ai_confirmed, action_taken=moved_to_playlist
+        assertEquals("ai_confirmed", db.query("SELECT verdict AS v FROM track WHERE yandex_track_id='ai1'") { it.string("v") }.first())
+        assertEquals("moved_to_playlist", db.query("SELECT action_taken AS v FROM track WHERE yandex_track_id='ai1'") { it.string("v") }.first())
+        // gray → verdict=review_required + action_taken=moved_to_playlist (снят с лайков + в плейлист), трек жив (is_dead=0)
+        assertEquals("review_required", db.query("SELECT verdict AS v FROM track WHERE yandex_track_id='gray1'") { it.string("v") }.first())
+        assertEquals("moved_to_playlist", db.query("SELECT action_taken AS v FROM track WHERE yandex_track_id='gray1'") { it.string("v") }.first())
+        assertEquals(0L, scalarLong("SELECT is_dead AS v FROM track WHERE yandex_track_id='gray1'"))
+        // gray помечен просканированным (инкрементальный маркер)
+        assertTrue(scalarLong("SELECT COUNT(*) AS v FROM track WHERE yandex_track_id='gray1' AND last_scan IS NOT NULL") == 1L)
+        // три audit-строки (по одной на трек)
+        assertEquals(3L, scalarLong("SELECT COUNT(*) AS v FROM audit_log"))
+        assertEquals("is_dead", db.query("SELECT to_state AS v FROM audit_log a JOIN track t ON a.track_id=t.id WHERE t.yandex_track_id='dead1'") { it.string("v") }.first())
+    }
+
     // ── fakes для сквозного теста ─────────────────────────────────────────────
 
     private data class Quad(val a: String, val b: String?, val c: String?, val d: String?)
@@ -315,6 +345,7 @@ class SqlAdaptersTest {
         override fun dislike(trackId: String) = disliked.add(trackId)
         override fun undislike(trackId: String) = disliked.remove(trackId)
         override fun like(trackId: String) = liked.add(trackId)
+        override fun unlike(trackId: String) = liked.remove(trackId)
         override fun addToPlaylist(trackId: String, playlistKind: String) = true
         override fun removeFromPlaylist(trackId: String, playlistKind: String) = true
     }

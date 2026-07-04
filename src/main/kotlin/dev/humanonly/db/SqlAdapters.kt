@@ -8,6 +8,7 @@ import dev.humanonly.detector.TrackMetaFeatures
 import dev.humanonly.pipeline.ActionCandidate
 import dev.humanonly.pipeline.ActionOp
 import dev.humanonly.pipeline.ActionSink
+import dev.humanonly.pipeline.CleanupSink
 import dev.humanonly.pipeline.DownloadCandidate
 import dev.humanonly.pipeline.DownloadQueue
 import dev.humanonly.pipeline.DownloadSink
@@ -175,6 +176,74 @@ class TrackRepository(
             listOf("pending", ts, yandexTrackId),
         )
         appendAudit(yandexTrackId, action = "archive_pending:$reason", from = null, to = null)
+    }
+
+    // ── чистка живой библиотеки (LibraryCleanup) ─────────────────────────────
+
+    /**
+     * Пометить трек мёртвым (удалён/недоступен в ЯМ, лайк снят [dev.humanonly.pipeline.LibraryActions.unlike]):
+     * `is_dead=1` + audit `unlike_dead` перехода `from → is_dead` (граф §5: `любое → is_dead`). Идемпотентно.
+     */
+    fun markDead(yandexTrackId: String, from: TrackState) {
+        val ts = now()
+        db.update(
+            "UPDATE track SET is_dead = 1, last_scan = ?, updated_at = ? WHERE yandex_track_id = ?",
+            listOf(ts, ts, yandexTrackId),
+        )
+        appendAudit(yandexTrackId, action = "unlike_dead", from = from, to = TrackState.IS_DEAD)
+    }
+
+    /**
+     * Инкрементальный маркер чистки: пометить лайкнутый трек как ПРОСКАНИРОВАННЫЙ-и-ЧИСТЫЙ (`last_scan`),
+     * не трогая ни лайк, ни §5-узел (`verdict` оставляем детект-пайплайну — он проставит clean+скоринги+версию
+     * и заведёт трек в скачку/архив штатно). Смысл: при повторном прогоне [SqlCleanupSource]-скан пропустит
+     * уже просканированные лайки (`last_scan IS NOT NULL`) — сканируем ТОЛЬКО новые. Без audit (это не переход
+     * состояния, а отметка времени скана). Идемпотентно.
+     */
+    fun markCleanupScannedClean(yandexTrackId: String) {
+        val ts = now()
+        db.update(
+            "UPDATE track SET last_scan = ?, updated_at = ? WHERE yandex_track_id = ?",
+            listOf(ts, ts, yandexTrackId),
+        )
+    }
+
+    /**
+     * yandex_track_id всех уже просканированных треков (`last_scan IS NOT NULL`) — как чисткой, так и штатным
+     * детект-прогоном. Для инкрементального скана чистки: повторный прогон сканирует лишь НОВЫЕ лайки
+     * (`liked − scannedTrackIds`), не гоняя метаданные по второму разу (хард-правило 7 — вежливость к ЯМ).
+     */
+    fun scannedTrackIds(): Set<String> =
+        db.query("SELECT yandex_track_id FROM track WHERE last_scan IS NOT NULL", emptyList()) {
+            it.string("yandex_track_id")!!
+        }.toSet()
+
+    /**
+     * Зафиксировать гейт-ИИ чистки: дизлайкнут + перенесён в плейлист «детект ИИ» — `verdict=ai_confirmed`,
+     * `action_taken=moved_to_playlist` + audit цепочки §5 (`suspected → moved_to_playlist`). Идемпотентно.
+     */
+    fun writeCleanupAi(yandexTrackId: String) {
+        val ts = now()
+        db.update(
+            "UPDATE track SET verdict = ?, action_taken = ?, last_scan = ?, updated_at = ? WHERE yandex_track_id = ?",
+            listOf(TrackState.AI_CONFIRMED.code, TrackState.MOVED_TO_PLAYLIST.code, ts, ts, yandexTrackId),
+        )
+        appendAudit(yandexTrackId, action = "cleanup_ai_moved", from = TrackState.SUSPECTED, to = TrackState.MOVED_TO_PLAYLIST)
+    }
+
+    /**
+     * Зафиксировать серую зону, снятую с лайков и отправленную в плейлист «непонятно» на ручное ревью:
+     * `verdict=review_required` (§5-узел детекции НЕ двигаем — человек решит из плейлиста), `action_taken=
+     * moved_to_playlist` (трек перенесён + лайк снят), `last_scan` (инкрементальный маркер) + audit
+     * `cleanup_gray_moved`. Лайк снят на самом акке [LibraryCleanup] (unlike, без дизлайка). Идемпотентно.
+     */
+    fun writeCleanupGrayReview(yandexTrackId: String) {
+        val ts = now()
+        db.update(
+            "UPDATE track SET verdict = ?, action_taken = ?, last_review = ?, last_scan = ?, updated_at = ? WHERE yandex_track_id = ?",
+            listOf(TrackState.REVIEW_REQUIRED.code, TrackState.MOVED_TO_PLAYLIST.code, ts, ts, ts, yandexTrackId),
+        )
+        appendAudit(yandexTrackId, action = "cleanup_gray_moved", from = TrackState.REVIEW_REQUIRED, to = TrackState.REVIEW_REQUIRED)
     }
 
     /** Одна строка audit_log (§12: без PII). track_id — внутренний PK; трек обязан существовать. */
@@ -350,6 +419,26 @@ class SqlArchiveQueue(private val db: Db, private val limit: Int = 500) : Archiv
                 currentState = TrackState.DOWNLOADED,
             )
         }
+}
+
+/**
+ * [CleanupSink] над индексом (чистка живой библиотеки, §F4 + мёртвые лайки): персистит итог каждой корзины
+ * [dev.humanonly.pipeline.LibraryCleanup] — мёртвый → `is_dead`; гейт-ИИ → `moved_to_playlist`; серая (снята
+ * с лайков + в плейлист «непонятно») → `review_required`+`moved_to_playlist`. Каждая мутация пишет audit
+ * (§12, без PII). Флаги changed игнорируем — персист идемпотентен (повтор безопасен, §6.2).
+ */
+class SqlCleanupSink(private val repo: TrackRepository) : CleanupSink {
+    override fun onDead(trackId: String, from: TrackState, unliked: Boolean) {
+        repo.markDead(trackId, from)
+    }
+
+    override fun onAiMoved(trackId: String, disliked: Boolean, added: Boolean) {
+        repo.writeCleanupAi(trackId)
+    }
+
+    override fun onGrayReview(trackId: String, unliked: Boolean, added: Boolean) {
+        repo.writeCleanupGrayReview(trackId)
+    }
 }
 
 /** [ArchiveSink] над индексом: archive_status archived/pending + audit `downloaded → archived` (§F6). */

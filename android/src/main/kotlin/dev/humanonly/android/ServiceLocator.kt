@@ -15,6 +15,7 @@ import dev.humanonly.db.SqlActionSink
 import dev.humanonly.db.SqlArchiveQueue
 import dev.humanonly.db.SqlArchiveSink
 import dev.humanonly.db.SqlBackupSource
+import dev.humanonly.db.SqlCleanupSink
 import dev.humanonly.db.SqlDownloadQueue
 import dev.humanonly.db.SqlDownloadSink
 import dev.humanonly.db.SqlReviewSink
@@ -33,7 +34,9 @@ import dev.humanonly.pipeline.ActionDispatcher
 import dev.humanonly.pipeline.ActionMode
 import dev.humanonly.pipeline.DownloadQueue
 import dev.humanonly.pipeline.DownloadStage
+import dev.humanonly.pipeline.LibraryCleanup
 import dev.humanonly.pipeline.ScanConveyor
+import dev.humanonly.pipeline.TrackClassifier
 import dev.humanonly.pipeline.YandexTrackFetcher
 import dev.humanonly.yandex.YandexLibraryActions
 import dev.humanonly.schedule.ArchiveQueue
@@ -196,6 +199,39 @@ object ServiceLocator {
 
     /** Хранилище токена ЯМ на аппаратном Keystore (хард-правило 3/4). */
     fun tokenStore(ctx: Context): TokenStore = KeystoreTokenStore(ctx)
+
+    // ── чистка живой библиотеки (CleanupActivity, §F4 + мёртвые лайки) ────────
+
+    /** Индекс SQLite (тот же файл, что плановый прогон) — для скана/бэкапа/персиста чистки. */
+    fun openDb(ctx: Context): AndroidDb = AndroidDb(CurationOpenHelper(ctx).writableDatabase)
+
+    /**
+     * Классификатор чистки поверх клиента ЯМ — ПРОДАКШН-каскад (тот же, что плановый прогон/детект-smoke):
+     * один запрос `tracks/{id}` на трек через лимитер (хард-правило 7) → корзина dead/gate/gray/clean.
+     */
+    fun cleanupClassifier(ctx: Context, client: YandexClient): TrackClassifier =
+        YandexCleanupClassifier(client, detectionCascade(ctx), metaFeatureExtractor())
+
+    /**
+     * Исполнитель чистки живой библиотеки: реальные акк-операции ([YandexLibraryActions]) + гарант бэкапа
+     * (хард-правило 5: [DeviceBackupGuard] снимет восстановимый снимок лайков перед деструктивом) + персист
+     * в индекс ([SqlCleanupSink]). [aiPlaylistKind]/[grayPlaylistKind] — kind заранее созданных плейлистов
+     * «детект ИИ» / «непонятно» (см. [YandexClient.createPlaylist]). Rate-limit к ЯМ реальный (хард-правило 7).
+     */
+    fun libraryCleanup(
+        ctx: Context,
+        db: AndroidDb,
+        client: YandexClient,
+        aiPlaylistKind: String,
+        grayPlaylistKind: String,
+    ): LibraryCleanup =
+        LibraryCleanup(
+            library = YandexLibraryActions.create(client),
+            aiPlaylistKind = aiPlaylistKind,
+            grayPlaylistKind = grayPlaylistKind,
+            backup = DeviceBackupGuard(ctx, SqlBackupSource(db)),
+            sink = SqlCleanupSink(TrackRepository(db)),
+        )
 
     /**
      * База AI-артистов slopless (hard gate каскада 0). Публичный доступ для детект-smoke на устройстве —

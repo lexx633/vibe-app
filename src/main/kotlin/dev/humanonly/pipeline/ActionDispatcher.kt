@@ -202,6 +202,13 @@ interface LibraryActions {
      * [ActionDispatcher.rollback] из `disliked` обязан не только снять дизлайк, но и вернуть лайк.
      */
     fun like(trackId: String): Boolean
+
+    /**
+     * Снять лайк БЕЗ дизлайка (чистка «мёртвых» лайков: трек удалён/недоступен в ЯМ, но лайк висит —
+     * скачивание об него спотыкается). В отличие от [dislike] не помечает трек негативно: мёртвый трек
+     * не «плохой», его просто нет. Обратимо [like] (F7-restore из бэкапа). true при фактическом снятии.
+     */
+    fun unlike(trackId: String): Boolean
     fun addToPlaylist(trackId: String, playlistKind: String): Boolean
     fun removeFromPlaylist(trackId: String, playlistKind: String): Boolean
 
@@ -210,6 +217,7 @@ interface LibraryActions {
         override fun dislike(trackId: String): Boolean = false
         override fun undislike(trackId: String): Boolean = false
         override fun like(trackId: String): Boolean = false
+        override fun unlike(trackId: String): Boolean = false
         override fun addToPlaylist(trackId: String, playlistKind: String): Boolean = false
         override fun removeFromPlaylist(trackId: String, playlistKind: String): Boolean = false
     }

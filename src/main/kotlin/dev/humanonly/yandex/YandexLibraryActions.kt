@@ -30,6 +30,8 @@ class YandexLibraryActions(
 
     override fun like(trackId: String): Boolean = client.likeTrack(userId, trackId)
 
+    override fun unlike(trackId: String): Boolean = client.unlikeTrack(userId, trackId)
+
     override fun addToPlaylist(trackId: String, playlistKind: String): Boolean {
         val snapshot = client.playlist(userId, playlistKind)
         if (trackId in snapshot.trackIds) return false // уже в плейлисте — идемпотентный no-op (§6.2)

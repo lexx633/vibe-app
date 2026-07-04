@@ -58,6 +58,12 @@
         <activity
             android:name="dev.humanonly.android.DetectSmokeActivity"
             android:exported="false" />
+
+        <!-- Чистка живой библиотеки лайков (§F4 + мёртвые лайки): dry-run скан → плейлисты → деструктив
+             с бэкапом (хард-правило 5). Не LAUNCHER — открывается из MainActivity. -->
+        <activity
+            android:name="dev.humanonly.android.CleanupActivity"
+            android:exported="false" />
     </application>
 
 </manifest>

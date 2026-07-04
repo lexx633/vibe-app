@@ -81,6 +81,7 @@ class MainActivity : Activity() {
         root.addView(button("Очистить токен") { onClearToken() })
         root.addView(button("Запустить прогон сейчас") { onRunNow() })
         root.addView(button("Проверить трек на ИИ (детект-smoke)") { onOpenDetect() })
+        root.addView(button("Чистка библиотеки (мёртвые + ИИ)") { onOpenCleanup() })
         root.addView(button("Ревью серой зоны") { onOpenReview() })
         root.addView(button("Media3 FLAC smoke") { onOpenSmoke() })
         root.addView(button("Архив §F6 smoke (Диск)") { onOpenArchiveSmoke() })
@@ -117,6 +118,8 @@ class MainActivity : Activity() {
     }
 
     private fun onOpenDetect() = startActivity(android.content.Intent(this, DetectSmokeActivity::class.java))
+
+    private fun onOpenCleanup() = startActivity(android.content.Intent(this, CleanupActivity::class.java))
 
     private fun onOpenReview() = startActivity(android.content.Intent(this, ReviewActivity::class.java))
 

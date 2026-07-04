@@ -53,6 +53,7 @@ class CurationRunTest {
         override fun dislike(trackId: String) = disliked.add(trackId)
         override fun undislike(trackId: String) = disliked.remove(trackId)
         override fun like(trackId: String) = liked.add(trackId)
+        override fun unlike(trackId: String) = liked.remove(trackId)
         override fun addToPlaylist(trackId: String, playlistKind: String) = true
         override fun removeFromPlaylist(trackId: String, playlistKind: String) = true
     }

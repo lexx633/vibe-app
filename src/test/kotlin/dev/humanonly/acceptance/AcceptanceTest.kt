@@ -53,6 +53,7 @@ class AcceptanceTest {
         override fun dislike(trackId: String): Boolean { calls += ActionOp.DISLIKE; return disliked.add(trackId) }
         override fun undislike(trackId: String): Boolean { calls += ActionOp.UNDISLIKE; return disliked.remove(trackId) }
         override fun like(trackId: String): Boolean { calls += ActionOp.RELIKE; return liked.add(trackId) }
+        override fun unlike(trackId: String): Boolean = liked.remove(trackId)
         override fun addToPlaylist(trackId: String, playlistKind: String): Boolean {
             calls += ActionOp.ADD_TO_PLAYLIST; return playlist.add(trackId)
         }
