@@ -35,6 +35,18 @@ class YandexClient(
             .result.library.tracks.map { it.id }
     }
 
+    /**
+     * id треков с дизлайком (read-only). Тот же shape ответа, что [likedTrackIds]
+     * (`result.library.tracks[].id`), поэтому переиспользуем [LikesResponse]. Нужен для верификации,
+     * что живой дизлайк применился, и что откат ([undislikeTrack]) его снял.
+     */
+    fun dislikedTrackIds(userId: String): List<String> {
+        val req = Endpoints.dislikes(config, userId)
+        val body = call(req)
+        return YandexJson.decodeFromString(LikesResponse.serializer(), body)
+            .result.library.tracks.map { it.id }
+    }
+
     /** Минимальные метаданные трека (id/available; PII не используется). */
     fun trackMetadata(trackId: String): List<TrackMetadata> {
         val req = Endpoints.trackMetadata(config, trackId)

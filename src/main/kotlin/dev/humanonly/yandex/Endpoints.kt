@@ -44,6 +44,14 @@ object Endpoints {
     fun trackMetadata(config: YandexConfig, trackId: String): Request =
         Request("${config.baseUrl}/tracks/$trackId", emptyMap())
 
+    /**
+     * Список дизлайков (read-only). `GET users/{uid}/dislikes/tracks` — по референс-репо
+     * (MarshalX/yandex-music-api `_client/likes.py::_get_dislikes`). Тот же shape ответа, что likes
+     * (`result.library.tracks[].id`). Нужен для верификации/отката живого дизлайка.
+     */
+    fun dislikes(config: YandexConfig, userId: String): Request =
+        Request("${config.baseUrl}/users/$userId/dislikes/tracks", emptyMap())
+
     // ── мутирующие (POST form) ────────────────────────────────────────────────
     // Формы по конвенции community-клиента yandex-music (track-ids). ХАРД-ПРАВИЛО 9: выверить точные
     // пути/поля по референс-репо перед первым живым вызовом; здесь — только форма запроса (офлайн-тест).

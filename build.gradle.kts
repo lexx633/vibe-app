@@ -53,3 +53,13 @@ tasks.register<JavaExec>("liveScanSmoke") {
     mainClass.set("dev.humanonly.yandex.tools.LiveScanSmokeKt")
     classpath = sourceSets["test"].runtimeClasspath
 }
+
+// Живой ДЕСТРУКТИВ (§F4, хард-правило 5): авто-дизлайк одного трека на тестовом акке.
+// Без --execute — только dry-run плана + снятый бэкап (НЕ мутирует). С --execute — дизлайк→верификация→
+// авто-откат (undislike), акк возвращается в исходное. gradlew liveDislike --args="<токен> [--execute]"
+tasks.register<JavaExec>("liveDislike") {
+    group = "verification"
+    description = "Живой авто-дизлайк на ЯМ: dry-run+бэкап по умолчанию; --execute = дизлайк+откат (тест-акк, ДА)"
+    mainClass.set("dev.humanonly.yandex.tools.LiveDislikeKt")
+    classpath = sourceSets["test"].runtimeClasspath
+}

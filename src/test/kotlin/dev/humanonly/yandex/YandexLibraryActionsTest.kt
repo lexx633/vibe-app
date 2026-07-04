@@ -81,6 +81,29 @@ class YandexLibraryActionsTest {
     }
 
     @Test
+    fun `dislikes строит read-only url по референс-репо`() {
+        assertEquals(
+            "https://api.example.test/users/u1/dislikes/tracks",
+            Endpoints.dislikes(config, "u1").url,
+        )
+        assertTrue(Endpoints.dislikes(config, "u1").params.isEmpty())
+    }
+
+    @Test
+    fun `dislikedTrackIds парсит library-tracks (тот же shape, что likes)`() {
+        val transport = object : YandexTransport {
+            override fun getJson(url: String, params: Map<String, String>, headers: Map<String, String>): String {
+                assertEquals("https://api.example.test/users/u1/dislikes/tracks", url)
+                return """{"result":{"library":{"uid":424242,"revision":7,"tracks":[{"id":"555"},{"id":"777"}]}}}"""
+            }
+            override fun postForm(url: String, form: Map<String, String>, headers: Map<String, String>): String = "{}"
+            override fun getBytes(url: String, headers: Map<String, String>): ByteArray = ByteArray(0)
+            override fun getRange(url: String, from: Long, to: Long?, headers: Map<String, String>): ByteArray = ByteArray(0)
+        }
+        assertEquals(listOf("555", "777"), client(transport).dislikedTrackIds("u1"))
+    }
+
+    @Test
     fun `плейлист-операции в MVP явно не поддержаны (не молчат)`() {
         val lib = YandexLibraryActions(client(CapturingTransport()), userId = "u1")
         assertThrows(UnsupportedOperationException::class.java) { lib.addToPlaylist("1", "ai") }
