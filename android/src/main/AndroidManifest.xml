@@ -1,14 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Сеть — для yandex-слоя (скачивание/детект). Батарея/зарядка — сигналы для RunConstraints. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
+        android:name="dev.humanonly.android.HumanonlyApp"
         android:allowBackup="false"
-        android:label="humanonly">
-        <!-- WorkManager сам регистрирует свой default-initializer через androidx.startup. -->
+        android:label="humanonly"
+        android:theme="@android:style/Theme.Material.Light">
+        <!-- On-demand WorkManager: снимаем default-initializer androidx.startup, движок поднимает
+             HumanonlyApp (Configuration.Provider) при первом getInstance. HumanonlyApp.onCreate ставит
+             периодику. -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
+
+        <!-- Операторская панель sideload-сборки (положить токен / прогон вручную / статус). -->
+        <activity
+            android:name="dev.humanonly.android.MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
     </application>
 
 </manifest>
