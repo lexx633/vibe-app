@@ -4,6 +4,9 @@ import android.content.Context
 import dev.humanonly.config.FeatureFlags
 import dev.humanonly.db.ArtistEnricher
 import dev.humanonly.db.LiveScanSource
+import dev.humanonly.db.SqlActionQueue
+import dev.humanonly.db.SqlActionSink
+import dev.humanonly.db.SqlBackupSource
 import dev.humanonly.db.SqlScanSource
 import dev.humanonly.db.SqlVerdictSink
 import dev.humanonly.db.TrackRepository
@@ -12,7 +15,10 @@ import dev.humanonly.db.YandexMetaLookup
 import dev.humanonly.detector.DetectionCascade
 import dev.humanonly.detector.MetadataScorer
 import dev.humanonly.detector.SloplessGate
+import dev.humanonly.pipeline.ActionDispatcher
+import dev.humanonly.pipeline.ActionMode
 import dev.humanonly.pipeline.ScanConveyor
+import dev.humanonly.yandex.YandexLibraryActions
 import dev.humanonly.schedule.BackoffKind
 import dev.humanonly.schedule.BackoffPolicy
 import dev.humanonly.schedule.CurationRun
@@ -33,6 +39,12 @@ import dev.humanonly.yandex.YandexConfig
 object ServiceLocator {
 
     private const val DETECTOR_VERSION = "metadata-mvp-1"
+
+    /**
+     * Флаги прогона. `autoDislike=false` в MVP (хард-правило 5): деструктив выключен по умолчанию.
+     * Включение — осознанное изменение здесь + ДА владельца; проводка ниже ([buildDispatcher]) уже готова.
+     */
+    private val flags: FeatureFlags = FeatureFlags.MVP
 
     /** Расписание MVP: раз в 6 ч, только по не-лимитной сети, экспоненциальный backoff. */
     val schedule: RunSchedule = RunSchedule(
@@ -67,12 +79,32 @@ object ServiceLocator {
         } ?: indexDelta
 
         val run = CurationRun(
-            flags = FeatureFlags.MVP,
+            flags = flags,
             scanSource = scanSource,
             conveyor = conveyor,
             schedule = schedule,
+            actionQueue = SqlActionQueue(db),        // треки verdict=ai_confirmed, ждущие действия
+            dispatcher = buildDispatcher(ctx, db, repo),
         )
         return RunScheduler(run, schedule)
+    }
+
+    /**
+     * Диспетчер авто-действий (§F4). Строится ТОЛЬКО когда [FeatureFlags.autoDislike] включён осознанно
+     * И есть токен ЯМ (хард-правило 3 — без токена live-операций нет). Режим MVP — [ActionMode.DISLIKE_ONLY]
+     * (перенос в плейлист отложен, см. [YandexLibraryActions]). Хард-правило 5 обеспечивает [DeviceBackupGuard]:
+     * без свежего восстановимого бэкапа лайков `ActionDispatcher.execute` откажется дизлайкать. Rate-limit
+     * к ЯМ сохраняется в клиенте (хард-правило 7). Пока флаг off — возвращаем null (стадия действий не идёт).
+     */
+    private fun buildDispatcher(ctx: Context, db: AndroidDb, repo: TrackRepository): ActionDispatcher? {
+        if (!flags.autoDislike) return null
+        val client = liveClient(ctx) ?: return null
+        return ActionDispatcher(
+            mode = ActionMode.DISLIKE_ONLY,
+            library = YandexLibraryActions.create(client),
+            sink = SqlActionSink(repo),
+            backup = DeviceBackupGuard(ctx, SqlBackupSource(db)),
+        )
     }
 
     /**
