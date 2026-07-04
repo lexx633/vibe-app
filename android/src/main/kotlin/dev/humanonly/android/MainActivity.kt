@@ -31,7 +31,22 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(buildUi())
+        seedTestTokenIfEmpty()
         refresh()
+    }
+
+    /**
+     * Тест-режим: если в Keystore токена ЯМ ещё нет, подставляем запечённый в APK тестовый токен
+     * ([BakedTokens], gitignored-ассет) — чтобы не вводить руками на устройстве (хард-правило 3: тест-акк).
+     * Токен НЕ показывается и НЕ логируется (хард-правило 4) — только кладётся в store; в статусе будет
+     * лишь отпечаток. Если токен уже положен вручную — не трогаем.
+     */
+    private fun seedTestTokenIfEmpty() {
+        val store = runCatching { ServiceLocator.tokenStore(this) }.getOrNull() ?: return
+        val alreadyHas = runCatching { store.load() != null }.getOrDefault(false)
+        if (alreadyHas) return
+        val baked = BakedTokens.yandexMusic(this) ?: return
+        runCatching { store.save(baked) }
     }
 
     private fun buildUi(): ScrollView {

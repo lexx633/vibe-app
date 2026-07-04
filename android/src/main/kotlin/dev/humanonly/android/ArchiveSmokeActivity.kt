@@ -189,15 +189,8 @@ class ArchiveSmokeActivity : Activity() {
         return baked to if (baked.isNotBlank()) "запечён в APK" else "нет"
     }
 
-    /**
-     * Читает `access_token` из запечённого ассета `yadisk.token` (implicit-flow JSON). Без kotlinx-
-     * serialization в :android — минимальный регэксп по одному полю (хард-правило 8: не тащим зависимость
-     * ради 10 строк). Токен НЕ логируется (хард-правило 4).
-     */
-    private fun bakedDiskToken(): String? = runCatching {
-        val text = assets.open("yadisk.token").bufferedReader().use { it.readText() }
-        Regex("\"access_token\"\\s*:\\s*\"([^\"]+)\"").find(text)?.groupValues?.get(1)?.takeIf { it.isNotBlank() }
-    }.getOrNull()
+    /** Токен Диска из запечённого ассета (см. [BakedTokens]). Токен НЕ логируется (хард-правило 4). */
+    private fun bakedDiskToken(): String? = BakedTokens.yandexDisk(this)
 
     private fun diskClient(token: String) = YandexDiskClient(AndroidDiskHttp(token))
     private fun diskBlobStore(token: String) = YandexDiskBlobStore(diskClient(token))
