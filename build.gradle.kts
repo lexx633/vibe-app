@@ -44,3 +44,12 @@ tasks.register<JavaExec>("liveSmoke") {
     // чтобы main оставался dex-совместимым для APK. Здесь берём test-classpath.
     classpath = sourceSets["test"].runtimeClasspath
 }
+
+// Живой smoke live-скана (TODO :android #1): likes→БД→enrich→scan_delta + DTO-верификация по факту.
+// gradlew liveScanSmoke --args="<путь к токену> [путь к snapshot slopless.json]"
+tasks.register<JavaExec>("liveScanSmoke") {
+    group = "verification"
+    description = "Живой прогон live-скана к ЯМ (likes→scan_delta + дамп схемы DTO; нужен токен-файл, тест-акк)"
+    mainClass.set("dev.humanonly.yandex.tools.LiveScanSmokeKt")
+    classpath = sourceSets["test"].runtimeClasspath
+}
