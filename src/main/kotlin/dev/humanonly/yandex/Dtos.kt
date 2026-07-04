@@ -90,19 +90,28 @@ data class TrackMetadata(
 }
 
 /**
- * Реф артиста трека. Парсим ТОЛЬКО `id` (имя — PII §12, не берём). id в API ЯМ приходит то числом,
- * то строкой → храним как [JsonPrimitive] и отдаём `.content` (устойчиво к обоим представлениям).
+ * Реф артиста трека. `id` — вход slopless-гейта (устойчив к number/string). `name` — PII §12,
+ * опционален и парсится ТОЛЬКО для каскада 1 (шаблонный AI-нейминг): вызывающий обязан не хранить/
+ * не логировать имя, а свести его к булеву признаку ([dev.humanonly.detector.MetaFeatureExtractor]).
  */
 @Serializable
-data class ArtistRef(val id: JsonPrimitive) {
+data class ArtistRef(val id: JsonPrimitive, val name: String? = null) {
     val artistId: String get() = id.content
 }
 
-/** Реф альбома трека. Только `id` (имя альбома — PII §12, не берём). id устойчив к number/string. */
+/**
+ * Реф альбома трека. `id` (устойчив к number/string) — для album-aware вставки в плейлист.
+ * `labels` — PII §12, опционально: имя лейбла нужно каскаду 1 (подозрительные AI-фермы релизов),
+ * сводится вызывающим к булеву признаку, само имя не хранится/не логируется.
+ */
 @Serializable
-data class AlbumRef(val id: JsonPrimitive) {
+data class AlbumRef(val id: JsonPrimitive, val labels: List<LabelRef> = emptyList()) {
     val albumId: String get() = id.content
 }
+
+/** Лейбл релиза. Берём только `name` (PII §12) — для булева `suspiciousLabel` каскада 1. */
+@Serializable
+data class LabelRef(val name: String? = null)
 
 // ── users/{uid}/playlists/{kind} (revision + состав для change-relative) ───────
 

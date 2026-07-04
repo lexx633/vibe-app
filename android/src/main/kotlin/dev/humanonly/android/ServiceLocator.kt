@@ -4,6 +4,7 @@ import android.content.Context
 import dev.humanonly.config.FeatureFlags
 import dev.humanonly.db.ArtistEnricher
 import dev.humanonly.db.LiveScanSource
+import dev.humanonly.db.MetaResolver
 import dev.humanonly.db.SqlActionQueue
 import dev.humanonly.db.SqlActionSink
 import dev.humanonly.db.SqlBackupSource
@@ -16,6 +17,7 @@ import dev.humanonly.review.ReviewQueue
 import dev.humanonly.db.YandexLibraryReader
 import dev.humanonly.db.YandexMetaLookup
 import dev.humanonly.detector.DetectionCascade
+import dev.humanonly.detector.MetaFeatureExtractor
 import dev.humanonly.detector.MetadataScorer
 import dev.humanonly.detector.SloplessGate
 import dev.humanonly.pipeline.ActionDispatcher
@@ -145,6 +147,16 @@ object ServiceLocator {
      */
     fun detectionCascade(ctx: Context): DetectionCascade =
         DetectionCascade(loadGate(ctx), MetadataScorer())
+
+    /** Экстрактор признаков каскада 1 (чистый, офлайн). Дефолтная конфигурация сигналов. */
+    fun metaFeatureExtractor(): MetaFeatureExtractor = MetaFeatureExtractor()
+
+    /**
+     * Живой резолвер метапризнаков (каскад 1) поверх клиента ЯМ — для планового прогона (scan) и
+     * детект-smoke. Один запрос `tracks/{id}` на трек, через rate-limiter клиента (хард-правило 7).
+     */
+    fun metaResolver(client: YandexClient): MetaResolver =
+        YandexMetaFeatureResolver(client, metaFeatureExtractor())
 
     /**
      * Живой клиент ЯМ из сохранённого токена, либо null если токена нет (тогда live-стадии пропускаются).
