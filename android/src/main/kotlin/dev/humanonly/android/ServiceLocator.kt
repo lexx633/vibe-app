@@ -68,6 +68,16 @@ object ServiceLocator {
      * В MVP-прогоне НЕ используется: scan_delta берётся из индекса ([SqlScanSource]). Клиент — для будущих
      * стадий (скачивание/действия/restore), которые подключаются отдельными чанками с ДА.
      */
+    /** Хранилище токена ЯМ на аппаратном Keystore (хард-правило 3/4). */
+    fun tokenStore(ctx: Context): TokenStore = KeystoreTokenStore(ctx)
+
+    /**
+     * Живой клиент ЯМ из сохранённого токена, либо null если токена нет (тогда live-стадии пропускаются).
+     * Токен в лог не пишем — при диагностике только `tokenStore(ctx).fingerprint()`.
+     */
+    fun liveClient(ctx: Context): YandexClient? =
+        tokenStore(ctx).load()?.let { yandexClient(it) }
+
     fun yandexClient(token: String, baseUrl: String = YandexConfig.DEFAULT_BASE_URL): YandexClient {
         val rateLimiter = RateLimiter(
             nowNanos = System::nanoTime,
