@@ -8,6 +8,9 @@ import dev.humanonly.detector.TrackMetaFeatures
 import dev.humanonly.pipeline.ActionCandidate
 import dev.humanonly.pipeline.ActionOp
 import dev.humanonly.pipeline.ActionSink
+import dev.humanonly.pipeline.DownloadCandidate
+import dev.humanonly.pipeline.DownloadQueue
+import dev.humanonly.pipeline.DownloadSink
 import dev.humanonly.pipeline.TrackCandidate
 import dev.humanonly.pipeline.VerdictSink
 import dev.humanonly.schedule.ActionQueue
@@ -127,6 +130,31 @@ class TrackRepository(
             listOf(to.code, ts, ts, yandexTrackId),
         )
         appendAudit(yandexTrackId, action = "review", from = from, to = to)
+    }
+
+    /**
+     * Зафиксировать скачанный+подготовленный трек (§F6, §7 шаг 3): `phone_dl_status=downloaded`,
+     * `audio_hash` = sha256 ФИНАЛЬНОГО `.flac` (ключ дедупа/пути архива — его читает [SqlArchiveQueue]),
+     * `codec=flac` (после prepare контейнер всегда сырой flac). + audit `download` перехода `from → downloaded`.
+     * Локальный блоб к этому моменту уже записан [dev.humanonly.pipeline.DownloadStage] (crash-safety §6.1).
+     */
+    fun writeDownloaded(yandexTrackId: String, from: TrackState, sha256: String) {
+        val ts = now()
+        db.update(
+            """
+            UPDATE track SET
+              phone_dl_status = 'downloaded', audio_hash = ?, codec = 'flac',
+              last_download = ?, updated_at = ?
+            WHERE yandex_track_id = ?
+            """.trimIndent(),
+            listOf(sha256, ts, ts, yandexTrackId),
+        )
+        appendAudit(yandexTrackId, action = "download", from = from, to = TrackState.DOWNLOADED)
+    }
+
+    /** Зафиксировать неуспех скачивания — только audit (без смены phone_dl_status → ретрай позже, §6.1). */
+    fun writeDownloadFailed(yandexTrackId: String, reason: String) {
+        appendAudit(yandexTrackId, action = "download_failed:$reason", from = null, to = null)
     }
 
     /** Пометить трек заархивированным (archive_status=archived) + audit `downloaded → archived`. */
@@ -254,6 +282,45 @@ class SqlActionQueue(private val db: Db, private val limit: Int = 500) : ActionQ
 class SqlActionSink(private val repo: TrackRepository) : ActionSink {
     override fun commit(trackId: String, op: ActionOp, from: TrackState, to: TrackState, changed: Boolean) {
         repo.writeAction(trackId, op, from, to)
+    }
+}
+
+/**
+ * [DownloadQueue] над индексом: чистые треки (verdict∈{clean,human_confirmed}), ещё НЕ скачанные
+ * (`phone_dl_status` не 'downloaded'), живые (is_dead=0). Это вход стадии скачивания (§F6, §7 шаг 3).
+ * После успешного скачивания [SqlDownloadSink] проставит `phone_dl_status='downloaded'` → трек уходит
+ * из этой очереди и появляется в [SqlArchiveQueue]. Идемпотентно: пере-прогон не качает уже скачанное.
+ */
+class SqlDownloadQueue(private val db: Db, private val limit: Int = 500) : DownloadQueue {
+    override fun pending(): List<DownloadCandidate> =
+        db.query(
+            """
+            SELECT yandex_track_id, verdict, detector_version FROM track
+            WHERE verdict IN ('clean', 'human_confirmed')
+              AND (phone_dl_status IS NULL OR phone_dl_status <> 'downloaded')
+              AND is_dead = 0
+            ORDER BY id LIMIT ?
+            """.trimIndent(),
+            listOf(limit),
+        ) { row ->
+            val verdict = row.string("verdict") ?: ""
+            DownloadCandidate(
+                trackId = row.string("yandex_track_id")!!,
+                verdict = verdict,
+                detectorVersion = row.string("detector_version") ?: "",
+                currentState = TrackState.fromCode(verdict),
+            )
+        }
+}
+
+/** [DownloadSink] над индексом: успех → `phone_dl_status=downloaded`+audio_hash/codec+audit; провал → audit. */
+class SqlDownloadSink(private val repo: TrackRepository) : DownloadSink {
+    override fun onDownloaded(trackId: String, from: TrackState, sha256: String, remuxed: Boolean) {
+        repo.writeDownloaded(trackId, from, sha256)
+    }
+
+    override fun onFailed(trackId: String, reason: String) {
+        repo.writeDownloadFailed(trackId, reason)
     }
 }
 

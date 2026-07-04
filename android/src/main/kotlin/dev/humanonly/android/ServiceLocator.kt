@@ -1,13 +1,22 @@
 package dev.humanonly.android
 
 import android.content.Context
+import dev.humanonly.archive.Archiver
+import dev.humanonly.archive.FsLocalStore
+import dev.humanonly.archive.YandexDiskBlobStore
+import dev.humanonly.archive.YandexDiskClient
+import dev.humanonly.archive.YandexDiskManifestStore
 import dev.humanonly.config.FeatureFlags
 import dev.humanonly.db.ArtistEnricher
 import dev.humanonly.db.LiveScanSource
 import dev.humanonly.db.MetaResolver
 import dev.humanonly.db.SqlActionQueue
 import dev.humanonly.db.SqlActionSink
+import dev.humanonly.db.SqlArchiveQueue
+import dev.humanonly.db.SqlArchiveSink
 import dev.humanonly.db.SqlBackupSource
+import dev.humanonly.db.SqlDownloadQueue
+import dev.humanonly.db.SqlDownloadSink
 import dev.humanonly.db.SqlReviewSink
 import dev.humanonly.db.SqlReviewSource
 import dev.humanonly.db.SqlScanSource
@@ -22,8 +31,12 @@ import dev.humanonly.detector.MetadataScorer
 import dev.humanonly.detector.SloplessGate
 import dev.humanonly.pipeline.ActionDispatcher
 import dev.humanonly.pipeline.ActionMode
+import dev.humanonly.pipeline.DownloadQueue
+import dev.humanonly.pipeline.DownloadStage
 import dev.humanonly.pipeline.ScanConveyor
+import dev.humanonly.pipeline.YandexTrackFetcher
 import dev.humanonly.yandex.YandexLibraryActions
+import dev.humanonly.schedule.ArchiveQueue
 import dev.humanonly.schedule.BackoffKind
 import dev.humanonly.schedule.BackoffPolicy
 import dev.humanonly.schedule.CurationRun
@@ -31,7 +44,9 @@ import dev.humanonly.schedule.RunConstraints
 import dev.humanonly.schedule.RunSchedule
 import dev.humanonly.schedule.RunScheduler
 import dev.humanonly.schedule.ScanSource
+import dev.humanonly.yandex.FlacArchivePreparer
 import dev.humanonly.yandex.RateLimiter
+import dev.humanonly.yandex.TrackDownloader
 import dev.humanonly.yandex.YandexClient
 import dev.humanonly.yandex.YandexConfig
 
@@ -69,19 +84,24 @@ object ServiceLocator {
         val db = AndroidDb(CurationOpenHelper(ctx).writableDatabase)
         val repo = TrackRepository(db)
 
-        val gate = loadGate(ctx)
-        val cascade = DetectionCascade(gate, MetadataScorer())
+        val cascade = DetectionCascade(loadGate(ctx), MetadataScorer())
         val conveyor = ScanConveyor(cascade, SqlVerdictSink(repo, DETECTOR_VERSION))
 
-        // scan_delta из индекса; поверх — живой источник лайков ЯМ, если сохранён токен (иначе только
-        // индекс, офлайн). Live-стадия сама идёт через rate-limiter клиента (хард-правило 7); реальный
-        // прогон против ЯМ включается лишь наличием токена (хард-правило 3 — токен кладётся с ДА).
-        val indexDelta = SqlScanSource(db)
-        val scanSource: ScanSource = liveClient(ctx)?.let { client ->
+        // Один клиент ЯМ на прогон (null — офлайн: токена нет). Live-стадии идут через его rate-limiter
+        // (хард-правило 7); реальный прогон против ЯМ включается лишь наличием токена (хард-правило 3).
+        val client = liveClient(ctx)
+
+        // scan_delta из индекса; метапризнаки каскада 1 извлекаются из ЯМ (тот же tracks/{id}), если есть
+        // клиент — тогда серая зона REVIEW_REQUIRED рождается и в фоновом прогоне, не только в smoke.
+        val indexDelta = SqlScanSource(db, meta = client?.let { metaResolver(it) } ?: MetaResolver.Empty)
+        val scanSource: ScanSource = client?.let { c ->
             // Обогащаем artist_id новых треков из метаданных ЯМ → slopless-гейт каскада 0 работает.
-            val enricher = ArtistEnricher(repo, YandexMetaLookup(client))
-            LiveScanSource(YandexLibraryReader(client), repo, indexDelta, enricher)
+            val enricher = ArtistEnricher(repo, YandexMetaLookup(c))
+            LiveScanSource(YandexLibraryReader(c), repo, indexDelta, enricher)
         } ?: indexDelta
+
+        // Стадии скачивания+архивации (§F6, §7 шаги 3–4) — null, если archive off / нет клиента / нет токена Диска.
+        val archive = buildArchive(ctx, db, repo, client)
 
         val run = CurationRun(
             flags = flags,
@@ -89,9 +109,52 @@ object ServiceLocator {
             conveyor = conveyor,
             schedule = schedule,
             actionQueue = SqlActionQueue(db),        // треки verdict=ai_confirmed, ждущие действия
-            dispatcher = buildDispatcher(ctx, db, repo),
+            dispatcher = buildDispatcher(ctx, db, repo, client),
+            downloadQueue = archive?.downloadQueue ?: DownloadQueue.Empty,
+            downloadStage = archive?.downloadStage,
+            archiveQueue = archive?.archiveQueue ?: ArchiveQueue.Empty,
+            archiver = archive?.archiver,
         )
         return RunScheduler(run, schedule)
+    }
+
+    /** Собранные стадии скачивания+архивации прогона (см. [buildArchive]). */
+    private class ArchiveStages(
+        val downloadQueue: DownloadQueue,
+        val downloadStage: DownloadStage,
+        val archiveQueue: ArchiveQueue,
+        val archiver: Archiver,
+    )
+
+    /**
+     * Стадии скачивания (get-file-info → download → AES-CTR → демукс Media3 → сырой `.flac` → cacheDir) и
+     * архивации (дедуп по хэшу → заливка блоба на Яндекс.Диск → manifest.json → удаление локального).
+     * Строятся ТОЛЬКО когда [FeatureFlags.archive] включён И есть клиент ЯМ (хард-правило 3 — без токена
+     * live-стадий нет) И запечён токен Диска. Архив **аддитивен** (заливка на СВОЙ Диск — не деструктив,
+     * хард-правило 5 неприменимо). Rate-limit к ЯМ реальный (хард-правило 7). PII §12 не затрагивается —
+     * в индекс/manifest уходят только id/hash/verdict/version. Нет любого условия → null (стадии не идут).
+     */
+    private fun buildArchive(ctx: Context, db: AndroidDb, repo: TrackRepository, client: YandexClient?): ArchiveStages? {
+        if (!flags.archive) return null
+        val c = client ?: return null
+        val diskToken = BakedTokens.yandexDisk(ctx) ?: return null
+        // Локальный .flac — в cacheDir; Archiver удалит его после подтверждённой заливки.
+        val local = FsLocalStore(ctx.cacheDir.toPath())
+        val fetcher = YandexTrackFetcher(c, TrackDownloader(c, AndroidHttpTransport(), rateLimiter()))
+        val downloadStage = DownloadStage(
+            fetcher = fetcher,
+            preparer = FlacArchivePreparer(Media3FlacDemuxer()),
+            local = local,
+            sink = SqlDownloadSink(repo),
+        )
+        val diskClient = YandexDiskClient(AndroidDiskHttp(diskToken))
+        val archiver = Archiver(
+            blobs = YandexDiskBlobStore(diskClient),
+            local = local,
+            manifestStore = YandexDiskManifestStore(diskClient),
+            sink = SqlArchiveSink(repo),
+        )
+        return ArchiveStages(SqlDownloadQueue(db), downloadStage, SqlArchiveQueue(db), archiver)
     }
 
     /**
@@ -101,9 +164,9 @@ object ServiceLocator {
      * без свежего восстановимого бэкапа лайков `ActionDispatcher.execute` откажется дизлайкать. Rate-limit
      * к ЯМ сохраняется в клиенте (хард-правило 7). Пока флаг off — возвращаем null (стадия действий не идёт).
      */
-    private fun buildDispatcher(ctx: Context, db: AndroidDb, repo: TrackRepository): ActionDispatcher? {
+    private fun buildDispatcher(ctx: Context, db: AndroidDb, repo: TrackRepository, client: YandexClient?): ActionDispatcher? {
         if (!flags.autoDislike) return null
-        val client = liveClient(ctx) ?: return null
+        client ?: return null
         return ActionDispatcher(
             mode = ActionMode.DISLIKE_ONLY,
             library = YandexLibraryActions.create(client),
@@ -165,15 +228,19 @@ object ServiceLocator {
     fun liveClient(ctx: Context): YandexClient? =
         tokenStore(ctx).load()?.let { yandexClient(it) }
 
-    fun yandexClient(token: String, baseUrl: String = YandexConfig.DEFAULT_BASE_URL): YandexClient {
-        val rateLimiter = RateLimiter(
-            nowNanos = System::nanoTime,
-            sleeper = { waitNanos ->
-                if (waitNanos > 0) Thread.sleep(waitNanos / 1_000_000, (waitNanos % 1_000_000).toInt())
-            },
-        )
-        return YandexClient(YandexConfig(token, baseUrl = baseUrl), AndroidHttpTransport(), rateLimiter)
-    }
+    fun yandexClient(token: String, baseUrl: String = YandexConfig.DEFAULT_BASE_URL): YandexClient =
+        YandexClient(YandexConfig(token, baseUrl = baseUrl), AndroidHttpTransport(), rateLimiter())
+
+    /**
+     * Реальный rate-limiter к ЯМ (хард-правило 7 — не отключается): базово ≤1 rps, честные
+     * `nanoTime`/`Thread.sleep`. Общий для [yandexClient] и качалки архив-стадии ([TrackDownloader]).
+     */
+    private fun rateLimiter() = RateLimiter(
+        nowNanos = System::nanoTime,
+        sleeper = { waitNanos ->
+            if (waitNanos > 0) Thread.sleep(waitNanos / 1_000_000, (waitNanos % 1_000_000).toInt())
+        },
+    )
 
     /**
      * База AI-артистов slopless грузится в РАНТАЙМЕ (GPL — не вендорим в APK, CLAUDE.md §10). Приоритет:
