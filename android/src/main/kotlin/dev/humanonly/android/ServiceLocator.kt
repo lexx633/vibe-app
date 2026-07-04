@@ -6,6 +6,7 @@ import dev.humanonly.archive.FsLocalStore
 import dev.humanonly.archive.YandexDiskBlobStore
 import dev.humanonly.archive.YandexDiskClient
 import dev.humanonly.archive.YandexDiskManifestStore
+import dev.humanonly.backup.BackupManifest
 import dev.humanonly.config.FeatureFlags
 import dev.humanonly.db.ArtistEnricher
 import dev.humanonly.db.LiveScanSource
@@ -35,6 +36,7 @@ import dev.humanonly.pipeline.ActionMode
 import dev.humanonly.pipeline.DownloadQueue
 import dev.humanonly.pipeline.DownloadStage
 import dev.humanonly.pipeline.LibraryCleanup
+import dev.humanonly.pipeline.LibraryRestoreExecutor
 import dev.humanonly.pipeline.ScanConveyor
 import dev.humanonly.pipeline.TrackClassifier
 import dev.humanonly.pipeline.YandexTrackFetcher
@@ -232,6 +234,21 @@ object ServiceLocator {
             backup = DeviceBackupGuard(ctx, SqlBackupSource(db)),
             sink = SqlCleanupSink(TrackRepository(db)),
         )
+
+    /**
+     * Живой исполнитель F7-отката поверх акка ЯМ ([LibraryRestoreExecutor]): RE_ADD→undislike+like (живой
+     * дизлайк ЯМ снимает лайк, потому откат = снять дизлайк И вернуть лайк), REMOVE→unlike. Тот же путь
+     * [YandexLibraryActions], что чистка — rate-limit к ЯМ реальный (хард-правило 7). Идемпотентно (§6.2).
+     */
+    fun libraryRestore(client: YandexClient): LibraryRestoreExecutor =
+        LibraryRestoreExecutor(YandexLibraryActions.create(client))
+
+    /**
+     * Новейший записанный манифест бэкапа лайков (БЕЗ TTL) — источник целевого состояния для F7-отката.
+     * null, если снимков ещё нет. Читает только id/время (§12, без PII); значение токена не затрагивает.
+     */
+    fun latestBackupManifest(ctx: Context, db: AndroidDb): BackupManifest? =
+        DeviceBackupGuard(ctx, SqlBackupSource(db)).latestManifest()
 
     /**
      * База AI-артистов slopless (hard gate каскада 0). Публичный доступ для детект-smoke на устройстве —

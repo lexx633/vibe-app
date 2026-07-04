@@ -1,6 +1,7 @@
 package dev.humanonly.android
 
 import android.content.Context
+import dev.humanonly.backup.BackupManifest
 import dev.humanonly.backup.BackupSerialization
 import dev.humanonly.db.SqlBackupSource
 import dev.humanonly.pipeline.BackupGuard
@@ -28,6 +29,18 @@ class DeviceBackupGuard(
 
     override fun latestBackupId(): String? =
         freshBackupId() ?: runCatching { writeSnapshot() }.getOrNull()
+
+    /**
+     * Новейший записанный манифест бэкапа лайков (БЕЗ учёта TTL) — для F7-отката на устройстве. Берём самый
+     * поздний `likes-<ts>.json`, декодируем [BackupSerialization.decode]. null, если снимков нет или файл
+     * не читается/битый (тогда откат не предлагаем). Читает только id/время (§12, без PII).
+     */
+    fun latestManifest(): BackupManifest? {
+        val newest = dir.listFiles { f -> f.isFile && f.name.startsWith(PREFIX) && f.name.endsWith(SUFFIX) }
+            ?.maxByOrNull { createdAtOf(it.name) ?: 0L }
+            ?: return null
+        return runCatching { BackupSerialization.decode(newest.readText()) }.getOrNull()
+    }
 
     /** id самого свежего бэкапа в пределах TTL, либо null. */
     private fun freshBackupId(): String? {

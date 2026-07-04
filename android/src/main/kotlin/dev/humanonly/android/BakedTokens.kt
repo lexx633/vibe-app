@@ -16,8 +16,23 @@ import android.content.Context
  */
 object BakedTokens {
 
-    /** Тестовый OAuth-токен Яндекс.Музыки (`ym_test.token`), либо null если ассет не запечён. */
-    fun yandexMusic(ctx: Context): String? = read(ctx, "ym_test.token")
+    /**
+     * OAuth-токен Яндекс.Музыки. Приоритет: РАБОЧИЙ акк (`ym_prod.token`), если ассет запечён; иначе —
+     * тестовый (`ym_test.token`). Оба ассета gitignored (`*.token`) — в исходники/публичный репо не попадают.
+     * Переход на прод (хард-правило 3): Owner кладёт свой реальный токен в `assets/ym_prod.token` — код тот же,
+     * значение токена здесь не читается и не логируется, только подставляется в store.
+     */
+    fun yandexMusic(ctx: Context): String? = read(ctx, "ym_prod.token") ?: read(ctx, "ym_test.token")
+
+    /**
+     * Метка активного акк-источника для UI/логов БЕЗ утечки токена (хард-правило 4): `"prod"`, `"test"`
+     * или `"none"`. Показывать на экране чистки, чтобы Owner видел, против какого акка идёт деструктив.
+     */
+    fun yandexMusicSource(ctx: Context): String = when {
+        read(ctx, "ym_prod.token") != null -> "prod"
+        read(ctx, "ym_test.token") != null -> "test"
+        else -> "none"
+    }
 
     /** OAuth-токен Яндекс.Диска (`yadisk.token`), либо null если ассет не запечён. */
     fun yandexDisk(ctx: Context): String? = read(ctx, "yadisk.token")

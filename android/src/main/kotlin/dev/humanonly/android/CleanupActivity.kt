@@ -10,6 +10,8 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import dev.humanonly.backup.DryRunExecutor
+import dev.humanonly.backup.RestorePlanner
 import dev.humanonly.db.DiscoveredTrack
 import dev.humanonly.db.TrackRepository
 import dev.humanonly.pipeline.CleanupBucket
@@ -58,6 +60,9 @@ class CleanupActivity : Activity() {
         root.addView(hint("— уборка после ревью —"))
         root.addView(button("Удалить плейлист «детект ИИ»") { onDeletePlaylist(ai = true) })
         root.addView(button("Удалить плейлист «непонятно»") { onDeletePlaylist(ai = false) })
+        root.addView(hint("— откат (F7): вернуть лайки из последнего бэкапа —"))
+        root.addView(button("ОТКАТ (dry-run): план восстановления лайков") { onRestore(execute = false) })
+        root.addView(button("ОТКАТ: вернуть лайки (execute)") { onRestore(execute = true) })
 
         out = TextView(this).apply {
             textSize = 12f
@@ -74,8 +79,11 @@ class CleanupActivity : Activity() {
         val prefs = prefs()
         val ai = prefs.getString(KEY_AI_KIND, null)
         val gray = prefs.getString(KEY_GRAY_KIND, null)
-        log("Плейлисты: детект ИИ=${ai ?: "—"} непонятно=${gray ?: "—"}\nЖми «Скан» для dry-run.")
+        log("Запечённый акк: ${accountLabel()}\nПлейлисты: детект ИИ=${ai ?: "—"} непонятно=${gray ?: "—"}\nЖми «Скан» для dry-run.")
     }
+
+    /** Метка запечённого акк-источника (хард-правило 4: без утечки токена) — "prod"/"test"/"none". */
+    private fun accountLabel(): String = BakedTokens.yandexMusicSource(this)
 
     // ── 1. скан (dry-run) ─────────────────────────────────────────────────────
 
@@ -185,6 +193,55 @@ class CleanupActivity : Activity() {
             }.getOrElse { "ОШИБКА: ${it.message}" }
             log(report)
         }.start()
+    }
+
+    // ── откат F7: вернуть лайки из последнего бэкапа ──────────────────────────
+
+    private fun onRestore(execute: Boolean) {
+        log(if (execute) "ОТКАТ: возвращаю лайки из бэкапа…" else "ОТКАТ dry-run: читаю бэкап + текущие лайки…")
+        Thread {
+            val report = runCatching { runRestore(execute) }.getOrElse { "ОШИБКА: ${it.message}" }
+            log(report)
+        }.start()
+    }
+
+    /**
+     * Откат чистки (§F7, хард-правило 5): целевое состояние — последний снятый бэкап лайков; текущие лайки
+     * берём живьём из акка. [RestorePlanner] строит план (restoreExactly=false → только доливаем недостающие
+     * лайки, лишние НЕ снимаем). При [execute]=false — [DryRunExecutor] (счётчики, ноль мутаций акка); при
+     * true — [ServiceLocator.libraryRestore] реально возвращает лайки (undislike+like) через лимитер ЯМ.
+     */
+    private fun runRestore(execute: Boolean): String {
+        val client = client() ?: return NO_TOKEN
+        val db = ServiceLocator.openDb(this)
+        val manifest = ServiceLocator.latestBackupManifest(this, db)
+            ?: return "Бэкапов лайков нет (filesDir/backups пуст). Бэкап снимается на скане/ВЫПОЛНИТЬ — сначала прогони чистку."
+        val uid = client.accountUid().toString()
+        val currentLikes = client.likedTrackIds(uid)
+        val plan = RestorePlanner.plan(currentLikes, manifest, restoreExactly = false)
+
+        if (!execute) {
+            val dry = DryRunExecutor(currentLikes).execute(plan)
+            return buildString {
+                appendLine("ОТКАТ (dry-run) — план восстановления лайков. Акк: ${accountLabel()}")
+                appendLine("бэкап: createdAt=${manifest.createdAt}, лайков в бэкапе=${manifest.likes.size}")
+                appendLine("сейчас лайков в акке: ${currentLikes.size}")
+                appendLine("————————————————————")
+                appendLine("вернуть лайк (re-add): ${dry.reAddedCount}")
+                appendLine("уже на месте (no-op):  ${dry.noopCount}")
+                appendLine("(restoreExactly=false → лишние лайки НЕ снимаем)")
+                append("Готов. Реальный возврат — «ОТКАТ: вернуть лайки (execute)».")
+            }.trimEnd()
+        }
+
+        val res = ServiceLocator.libraryRestore(client).execute(plan)
+        return buildString {
+            appendLine("ОТКАТ ВЫПОЛНЕН ✓ (лайки возвращены из бэкапа). Акк: ${accountLabel()}")
+            appendLine("————————————————————")
+            appendLine("вернули лайк:    ${res.reAddedCount}")
+            appendLine("сняли лайк:      ${res.removedCount}")
+            appendLine("no-op (уже так): ${res.noopCount}")
+        }.trimEnd()
     }
 
     // ── удаление плейлистов (после ревью) ─────────────────────────────────────
