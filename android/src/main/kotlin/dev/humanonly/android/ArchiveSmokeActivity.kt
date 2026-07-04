@@ -78,7 +78,7 @@ class ArchiveSmokeActivity : Activity() {
         root.addView(trackInput)
 
         diskTokenInput = EditText(this).apply {
-            hint = "OAuth-токен Яндекс.Диска"
+            hint = "OAuth-токен Диска (пусто = запечённый в APK)"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
         }
@@ -100,9 +100,9 @@ class ArchiveSmokeActivity : Activity() {
     }
 
     private fun onDryRun() {
-        val diskToken = diskTokenInput.text?.toString()?.trim().orEmpty()
-        if (diskToken.isBlank()) { log("Введи OAuth-токен Диска."); return }
-        log("Проверка доступа к Диску…")
+        val (diskToken, source) = resolveDiskToken()
+        if (diskToken.isBlank()) { log("Нет токена Диска: поле пусто и ассет yadisk.token не запечён."); return }
+        log("Проверка доступа к Диску ($source)…")
         Thread {
             val report = runCatching {
                 val blobs = diskBlobStore(diskToken)
@@ -116,10 +116,10 @@ class ArchiveSmokeActivity : Activity() {
     }
 
     private fun onExecute() {
-        val diskToken = diskTokenInput.text?.toString()?.trim().orEmpty()
-        if (diskToken.isBlank()) { log("Введи OAuth-токен Диска."); return }
+        val (diskToken, source) = resolveDiskToken()
+        if (diskToken.isBlank()) { log("Нет токена Диска: поле пусто и ассет yadisk.token не запечён."); return }
         val trackId = trackInput.text?.toString()?.trim().orEmpty()
-        log("§F6: скачивание → демукс → заливка на Диск…")
+        log("§F6 ($source): скачивание → демукс → заливка на Диск…")
         Thread {
             val report = runCatching { runEndToEnd(trackId, diskToken) }
                 .getOrElse { "ОШИБКА: ${it.message}" }
@@ -176,6 +176,28 @@ class ArchiveSmokeActivity : Activity() {
         )
         return sb.toString()
     }
+
+    /**
+     * Источник токена Диска: приоритет у поля ввода (override для другого акка), иначе — запечённый в
+     * APK ассет `assets/yadisk.token` (gitignored, в публичный репо/исходники НЕ попадает — хард-правило 4).
+     * Возвращает (токен, человекочитаемый источник для лога — БЕЗ самого токена).
+     */
+    private fun resolveDiskToken(): Pair<String, String> {
+        val typed = diskTokenInput.text?.toString()?.trim().orEmpty()
+        if (typed.isNotBlank()) return typed to "из поля"
+        val baked = bakedDiskToken().orEmpty()
+        return baked to if (baked.isNotBlank()) "запечён в APK" else "нет"
+    }
+
+    /**
+     * Читает `access_token` из запечённого ассета `yadisk.token` (implicit-flow JSON). Без kotlinx-
+     * serialization в :android — минимальный регэксп по одному полю (хард-правило 8: не тащим зависимость
+     * ради 10 строк). Токен НЕ логируется (хард-правило 4).
+     */
+    private fun bakedDiskToken(): String? = runCatching {
+        val text = assets.open("yadisk.token").bufferedReader().use { it.readText() }
+        Regex("\"access_token\"\\s*:\\s*\"([^\"]+)\"").find(text)?.groupValues?.get(1)?.takeIf { it.isNotBlank() }
+    }.getOrNull()
 
     private fun diskClient(token: String) = YandexDiskClient(AndroidDiskHttp(token))
     private fun diskBlobStore(token: String) = YandexDiskBlobStore(diskClient(token))
