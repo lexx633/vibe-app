@@ -32,6 +32,7 @@ import java.io.ByteArrayOutputStream
  * памяти — нормализуется защитно ([normalizeStreamInfo]) и подтверждается ЖИВЫМ smoke на устройстве
  * перед первым реальным использованием (Robolectric с нативными декодерами ненадёжен, поэтому
  * юнит-тестом не покрываем — покрыта только чистая сборка [FlacRemux] на JVM golden-байтами).
+ * Живой smoke 2026-07-04 показал форму «fLaC»+HEADER+тело (42 байта) — учтено в [normalizeStreamInfo].
  */
 @OptIn(UnstableApi::class)
 class Media3FlacDemuxer : Mp4FlacDemuxer {
@@ -82,11 +83,33 @@ class Media3FlacDemuxer : Mp4FlacDemuxer {
     private fun normalizeStreamInfo(format: Format): ByteArray {
         val data = format.initializationData.firstOrNull()
             ?: error("STREAMINFO отсутствует в Format.initializationData")
-        return when (data.size) {
-            FlacRemux.STREAMINFO_SIZE -> data
-            FlacRemux.STREAMINFO_SIZE + 4 -> data.copyOfRange(4, data.size) // срезаем METADATA_BLOCK_HEADER
+        when (data.size) {
+            FlacRemux.STREAMINFO_SIZE -> Unit
+            FlacRemux.STREAMINFO_SIZE + 4 -> validateBlockHeader(data, offset = 0)
+            FlacRemux.STREAMINFO_SIZE + 8 -> {
+                validateFlacMarker(data)
+                validateBlockHeader(data, offset = 4)
+            }
             else -> error("неожиданный размер STREAMINFO из Media3: ${data.size} байт")
         }
+        return data.copyOfRange(data.size - FlacRemux.STREAMINFO_SIZE, data.size)
+    }
+
+    /** METADATA_BLOCK_HEADER на [offset]: тип блока 0 (STREAMINFO), длина тела = 34 (RFC 9639). */
+    private fun validateBlockHeader(data: ByteArray, offset: Int) {
+        val blockType = data[offset].toInt() and 0x7F // старший бит — last-metadata-block, игнорируем
+        check(blockType == 0) { "ожидался STREAMINFO (тип 0), получен тип $blockType" }
+        val len = ((data[offset + 1].toInt() and 0xFF) shl 16) or
+            ((data[offset + 2].toInt() and 0xFF) shl 8) or
+            (data[offset + 3].toInt() and 0xFF)
+        check(len == FlacRemux.STREAMINFO_SIZE) { "длина STREAMINFO в заголовке = $len, ожидалось ${FlacRemux.STREAMINFO_SIZE}" }
+    }
+
+    /** «fLaC»-магия (0x66 0x4C 0x61 0x43) в начале блока. */
+    private fun validateFlacMarker(data: ByteArray) {
+        val ok = data[0].toInt() == 0x66 && data[1].toInt() == 0x4C &&
+            data[2].toInt() == 0x61 && data[3].toInt() == 0x43
+        check(ok) { "ожидалась fLaC-магия перед STREAMINFO" }
     }
 }
 
