@@ -15,6 +15,9 @@ import dev.humanonly.schedule.CurationRun
 import dev.humanonly.schedule.RunConstraints
 import dev.humanonly.schedule.RunSchedule
 import dev.humanonly.schedule.RunScheduler
+import dev.humanonly.yandex.RateLimiter
+import dev.humanonly.yandex.YandexClient
+import dev.humanonly.yandex.YandexConfig
 
 /**
  * Минимальная ручная сборка зависимостей прогона (без DI-фреймворка). Профиль **MVP**: детектор =
@@ -55,6 +58,24 @@ object ServiceLocator {
             schedule = schedule,
         )
         return RunScheduler(run, schedule)
+    }
+
+    /**
+     * Живой клиент ЯМ на платформенном [AndroidHttpTransport] (без новых зависимостей — `java.net.http`
+     * на Android нет). Rate-limiter реальный: базово 1 rps, реальные `nanoTime`/`Thread.sleep` (хард-правило 7 —
+     * не отключается). Токен инъектируется вызывающим (источник — EncryptedSharedPreferences, отдельный чанк).
+     *
+     * В MVP-прогоне НЕ используется: scan_delta берётся из индекса ([SqlScanSource]). Клиент — для будущих
+     * стадий (скачивание/действия/restore), которые подключаются отдельными чанками с ДА.
+     */
+    fun yandexClient(token: String, baseUrl: String = YandexConfig.DEFAULT_BASE_URL): YandexClient {
+        val rateLimiter = RateLimiter(
+            nowNanos = System::nanoTime,
+            sleeper = { waitNanos ->
+                if (waitNanos > 0) Thread.sleep(waitNanos / 1_000_000, (waitNanos % 1_000_000).toInt())
+            },
+        )
+        return YandexClient(YandexConfig(token, baseUrl = baseUrl), AndroidHttpTransport(), rateLimiter)
     }
 
     /**
