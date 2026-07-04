@@ -54,7 +54,7 @@ class CleanupActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad, pad, pad)
         }
-        root.addView(title("Чистка библиотеки"))
+        root.addView(title("Чистка библиотеки  ·  v${appVersion()}"))
 
         // 1 — скан: безопасен, акк не трогается; здесь же снимается бэкап лайков.
         root.addView(sectionHeader("1 · Скан (dry-run — акк не трогаем)"))
@@ -325,6 +325,11 @@ class CleanupActivity : Activity() {
         if (danger) backgroundTintList = android.content.res.ColorStateList.valueOf(0xFFC62828.toInt())
         setOnClickListener { onClick() }
     }
+
+    /** versionName из манифеста — видимая метка сборки, чтобы отличать свежий APK от старого. */
+    private fun appVersion(): String = runCatching {
+        packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
+    }.getOrDefault("?")
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 

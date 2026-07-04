@@ -57,7 +57,7 @@ class MainActivity : Activity() {
         }
 
         root.addView(TextView(this).apply {
-            text = "humanonly"
+            text = "humanonly  ·  v${appVersion()}"
             textSize = 22f
             setPadding(0, 0, 0, dp(8))
         })
@@ -178,6 +178,11 @@ class MainActivity : Activity() {
     }
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+
+    /** versionName из манифеста — видимая метка сборки, чтобы отличать свежий APK от старого. */
+    private fun appVersion(): String = runCatching {
+        packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
+    }.getOrDefault("?")
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 }
