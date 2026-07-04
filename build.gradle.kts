@@ -35,5 +35,7 @@ tasks.register<JavaExec>("liveSmoke") {
     group = "verification"
     description = "Живой прогон yandex-слоя к ЯМ (нужен токен-файл через --args, только тестовый акк)"
     mainClass.set("dev.humanonly.yandex.tools.LiveSmokeKt")
-    classpath = sourceSets["main"].runtimeClasspath
+    // LiveSmoke + HttpYandexTransport (java.net.http, недоступен на Android) живут в test source set,
+    // чтобы main оставался dex-совместимым для APK. Здесь берём test-classpath.
+    classpath = sourceSets["test"].runtimeClasspath
 }
