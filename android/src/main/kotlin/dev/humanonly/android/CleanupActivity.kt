@@ -3,9 +3,11 @@ package dev.humanonly.android
 import android.app.Activity
 import android.content.Context
 import android.os.Bundle
+import android.os.PowerManager
 import android.view.Gravity
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -41,6 +43,11 @@ class CleanupActivity : Activity() {
 
     /** Флаг кооперативной остановки скана (кнопка «Стоп скан»). Скан проверяет его перед каждым треком. */
     @Volatile private var stopScan = false
+
+    /** Wake-lock фоновых операций: держится, пока идёт хоть одна (счётчик [activeOps]). */
+    private val opLock = Any()
+    private var activeOps = 0
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -102,11 +109,8 @@ class CleanupActivity : Activity() {
 
     private fun onScan() {
         stopScan = false
-        log("Скан… (один запрос метаданных на трек, ≤1 rps — может идти долго). «Стоп скан» прервёт после текущего трека.")
-        Thread {
-            val report = runCatching { runScan() }.getOrElse { "ОШИБКА: ${it.message}" }
-            log(report)
-        }.start()
+        log("Скан… (один запрос метаданных на трек, ≤1 rps — может идти долго). Экран не гаснет и телефон не спит, пока идёт скан. «Стоп скан» прервёт после текущего трека.")
+        runBg("scan") { runScan() }
     }
 
     /** Кооперативно остановить идущий скан: следующий трек не сканируется. Прогресс чистых уже в базе. */
@@ -168,17 +172,14 @@ class CleanupActivity : Activity() {
 
     private fun onCreatePlaylists() {
         log("Создаю плейлисты…")
-        Thread {
-            val report = runCatching {
-                val client = client() ?: return@runCatching NO_TOKEN
-                val uid = client.accountUid().toString()
-                val aiKind = client.createPlaylist(uid, PLAYLIST_AI)
-                val grayKind = client.createPlaylist(uid, PLAYLIST_GRAY)
-                prefs().edit().putString(KEY_AI_KIND, aiKind).putString(KEY_GRAY_KIND, grayKind).apply()
-                "Плейлисты созданы: детект ИИ=kind $aiKind, непонятно=kind $grayKind.\nМожно ВЫПОЛНИТЬ чистку (3)."
-            }.getOrElse { "ОШИБКА создания плейлистов: ${it.message}" }
-            log(report)
-        }.start()
+        runBg("playlists") {
+            val client = client() ?: return@runBg NO_TOKEN
+            val uid = client.accountUid().toString()
+            val aiKind = client.createPlaylist(uid, PLAYLIST_AI)
+            val grayKind = client.createPlaylist(uid, PLAYLIST_GRAY)
+            prefs().edit().putString(KEY_AI_KIND, aiKind).putString(KEY_GRAY_KIND, grayKind).apply()
+            "Плейлисты созданы: детект ИИ=kind $aiKind, непонятно=kind $grayKind.\nМожно ВЫПОЛНИТЬ чистку (3)."
+        }
     }
 
     // ── 3. выполнить чистку (деструктив) ──────────────────────────────────────
@@ -192,39 +193,33 @@ class CleanupActivity : Activity() {
         if (aiKind == null || grayKind == null) { log("Сначала «Создать плейлисты» (2)."); return }
 
         log("ВЫПОЛНЕНИЕ чистки (снимаю бэкап, затем действия)…")
-        Thread {
-            val report = runCatching {
-                val client = client() ?: return@runCatching NO_TOKEN
-                val db = ServiceLocator.openDb(this)
-                val cleanup = ServiceLocator.libraryCleanup(this, db, client, aiKind, grayKind)
-                val res = cleanup.execute(plan, confirm = true)
-                if (!res.executed) {
-                    "ОТКАЗ: ${res.refusedReason} (нет подтверждения/бэкапа — хард-правило 5)."
-                } else {
-                    buildString {
-                        appendLine("ЧИСТКА ВЫПОЛНЕНА ✓")
-                        appendLine("бэкап лайков:   ${res.backupId ?: "не требовался (лайки не трогали)"}")
-                        appendLine("————————————————————")
-                        appendLine("снято мёртвых:  ${res.deadUnliked}")
-                        appendLine("ИИ дизлайк+пл.: ${res.aiMoved}")
-                        appendLine("серых в «непонятно»: ${res.grayMoved}")
-                        appendLine("no-op (уже так): ${res.noop}")
-                        append("Разбери плейлист «непонятно» руками, потом удали плейлисты кнопками ниже.")
-                    }.trimEnd()
-                }
-            }.getOrElse { "ОШИБКА: ${it.message}" }
-            log(report)
-        }.start()
+        runBg("execute") {
+            val client = client() ?: return@runBg NO_TOKEN
+            val db = ServiceLocator.openDb(this)
+            val cleanup = ServiceLocator.libraryCleanup(this, db, client, aiKind, grayKind)
+            val res = cleanup.execute(plan, confirm = true)
+            if (!res.executed) {
+                "ОТКАЗ: ${res.refusedReason} (нет подтверждения/бэкапа — хард-правило 5)."
+            } else {
+                buildString {
+                    appendLine("ЧИСТКА ВЫПОЛНЕНА ✓")
+                    appendLine("бэкап лайков:   ${res.backupId ?: "не требовался (лайки не трогали)"}")
+                    appendLine("————————————————————")
+                    appendLine("снято мёртвых:  ${res.deadUnliked}")
+                    appendLine("ИИ дизлайк+пл.: ${res.aiMoved}")
+                    appendLine("серых в «непонятно»: ${res.grayMoved}")
+                    appendLine("no-op (уже так): ${res.noop}")
+                    append("Разбери плейлист «непонятно» руками, потом удали плейлисты кнопками ниже.")
+                }.trimEnd()
+            }
+        }
     }
 
     // ── откат F7: вернуть лайки из последнего бэкапа ──────────────────────────
 
     private fun onRestore(execute: Boolean) {
         log(if (execute) "ОТКАТ: возвращаю лайки из бэкапа…" else "ОТКАТ dry-run: читаю бэкап + текущие лайки…")
-        Thread {
-            val report = runCatching { runRestore(execute) }.getOrElse { "ОШИБКА: ${it.message}" }
-            log(report)
-        }.start()
+        runBg("restore") { runRestore(execute) }
     }
 
     /**
@@ -274,16 +269,13 @@ class CleanupActivity : Activity() {
         val kind = prefs().getString(key, null)
         if (kind == null) { log("Плейлист «$label» не создан/уже удалён."); return }
         log("Удаляю плейлист «$label» (kind $kind)…")
-        Thread {
-            val report = runCatching {
-                val client = client() ?: return@runCatching NO_TOKEN
-                val uid = client.accountUid().toString()
-                val ok = client.deletePlaylist(uid, kind)
-                if (ok) prefs().edit().remove(key).apply()
-                "Плейлист «$label» удалён=$ok."
-            }.getOrElse { "ОШИБКА удаления: ${it.message}" }
-            log(report)
-        }.start()
+        runBg("delete") {
+            val client = client() ?: return@runBg NO_TOKEN
+            val uid = client.accountUid().toString()
+            val ok = client.deletePlaylist(uid, kind)
+            if (ok) prefs().edit().remove(key).apply()
+            "Плейлист «$label» удалён=$ok."
+        }
     }
 
     /** Клиент ЯМ из сохранённого токена, иначе запечённый тестовый (этап A — тест-акк). */
@@ -295,6 +287,60 @@ class CleanupActivity : Activity() {
     private fun prefs() = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     private fun log(text: String) = runOnUiThread { out.text = text }
+
+    /**
+     * Запустить длинную сетевую операцию в фоне, удерживая устройство бодрым, пока она идёт:
+     *   - PARTIAL_WAKE_LOCK — CPU не уходит в suspend при засыпании телефона (иначе поток встаёт на
+     *     середине скана/чистки; WorkManager-прогон по расписанию имеет свой wake-lock, ручной — нет);
+     *   - FLAG_KEEP_SCREEN_ON — экран не гаснет, пока панель на переднем плане.
+     * Лок снимается в finally по завершении последней операции (счётчик [activeOps]).
+     * Оговорка: wake-lock спасает от засыпания, но НЕ от убийства процесса при уходе из приложения
+     * (для полной живучести в фоне нужен foreground-сервис — отдельный шаг).
+     */
+    private fun runBg(tag: String, work: () -> String) {
+        acquireAwake(tag)
+        Thread {
+            val report = runCatching { work() }.getOrElse { "ОШИБКА: ${it.message}" }
+            log(report)
+            releaseAwake()
+        }.start()
+    }
+
+    private fun acquireAwake(tag: String) {
+        synchronized(opLock) {
+            if (activeOps == 0) {
+                val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "humanonly:$tag").apply {
+                    setReferenceCounted(false)
+                    acquire(60 * 60 * 1000L) // предохранитель: не держать лок дольше 60 мин
+                }
+                runOnUiThread { window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+            }
+            activeOps++
+        }
+    }
+
+    private fun releaseAwake() {
+        synchronized(opLock) {
+            activeOps--
+            if (activeOps <= 0) {
+                activeOps = 0
+                wakeLock?.let { if (it.isHeld) it.release() }
+                wakeLock = null
+                runOnUiThread { window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        // Не оставляем лок висеть, если экран уничтожили посреди операции.
+        synchronized(opLock) {
+            wakeLock?.let { if (it.isHeld) it.release() }
+            wakeLock = null
+            activeOps = 0
+        }
+        super.onDestroy()
+    }
 
     private fun title(text: String) = TextView(this).apply {
         this.text = text; textSize = 20f; setPadding(0, 0, 0, dp(4))
