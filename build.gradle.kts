@@ -83,3 +83,14 @@ tasks.register<JavaExec>("livePlaylistMove") {
     mainClass.set("dev.humanonly.yandex.tools.LivePlaylistMoveKt")
     classpath = sourceSets["test"].runtimeClasspath
 }
+
+// Живой smoke архивации на Яндекс.Диск (§F6, §9): сквозной Archiver → YandexDiskBlobStore/ManifestStore
+// в папку /Бекап/vibe. Dry-run по умолчанию (только проверка токена/доступа); --execute = заливка
+// тест-блоба + manifest.json (файл ОСТАЁТСЯ на Диске). Токен-файл через --args, НЕ логируется.
+// gradlew liveDiskArchive --args="<путь к токену> [--execute]"
+tasks.register<JavaExec>("liveDiskArchive") {
+    group = "verification"
+    description = "Живая архивация на Яндекс.Диск: dry-run по умолчанию; --execute = заливка тест-блоба+манифеста в /Бекап/vibe"
+    mainClass.set("dev.humanonly.archive.tools.LiveDiskArchiveKt")
+    classpath = sourceSets["test"].runtimeClasspath
+}
