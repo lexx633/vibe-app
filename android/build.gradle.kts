@@ -38,6 +38,14 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    testOptions {
+        unitTests {
+            // Robolectric гоняет реальный SQLite через framework SQLiteDatabase API на JVM (без
+            // adb/эмулятора) — так проверяется паритет AndroidDb vs Schema прямо в unit-тестах.
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 dependencies {
@@ -47,4 +55,10 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.9.1")
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+
+    // Паритет AndroidDb vs Schema без устройства: Robolectric поднимает реальный SQLite за
+    // android.database.sqlite.SQLiteDatabase. JUnit4 — раннер Robolectric (core на JVM — JUnit5).
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.16.1")
+    testImplementation("androidx.test:core:1.7.0")
 }

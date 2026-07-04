@@ -33,9 +33,18 @@ interface Row {
     fun bool(col: String): Boolean?
 }
 
-/** Инициализация индекса: таблицы + индексы + PRAGMA (§F3). Идемпотентна (`IF NOT EXISTS`). */
-fun Db.initSchema() {
-    execScript(Schema.PRAGMA)
+/**
+ * Только схема: таблицы + индексы (§F3). Идемпотентна (`IF NOT EXISTS`). БЕЗ PRAGMA — их место
+ * зависит от платформы: на Android connection-PRAGMA нельзя внутри транзакции `onCreate`, поэтому
+ * там гоняется именно [createSchema], а PRAGMA — в `onConfigure` (см. `CurationOpenHelper`).
+ */
+fun Db.createSchema() {
     execScript(Schema.CREATE_TABLES)
     execScript(Schema.INDEXES)
+}
+
+/** Полная инициализация на свежем соединении ВНЕ транзакции (JVM/тест): PRAGMA + схема (§F3). */
+fun Db.initSchema() {
+    execScript(Schema.PRAGMA)
+    createSchema()
 }

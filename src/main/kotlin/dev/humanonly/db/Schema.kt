@@ -95,10 +95,22 @@ object Schema {
         "CREATE INDEX IF NOT EXISTS idx_track_last_scan ON track (last_scan)",
     )
 
-    /** PRAGMA при инициализации (§F3): цель <100 мс UI-запросы на 10k треков. */
-    val PRAGMA = listOf(
-        "PRAGMA journal_mode=WAL",
+    /**
+     * WAL: на Android ставится официальным API (`enableWriteAheadLogging`), на JVM — этим PRAGMA.
+     * Возвращает строку ("wal"/"memory") → на Android исполняется через rawQuery (см. [AndroidDb]).
+     */
+    const val JOURNAL_PRAGMA = "PRAGMA journal_mode=WAL"
+
+    /**
+     * Connection-PRAGMA (§F3): «safety level»/temp_store движок запрещает менять ВНУТРИ транзакции.
+     * Поэтому на Android их ставят в `onConfigure` (вне транзакции OpenHelper), а НЕ в `onCreate`
+     * (там только DDL). На JVM (JdbcDb) транзакции нет — идут в общем [PRAGMA].
+     */
+    val CONNECTION_PRAGMA = listOf(
         "PRAGMA synchronous=NORMAL",
         "PRAGMA temp_store=MEMORY",
     )
+
+    /** Полный набор PRAGMA (§F3, цель <100 мс UI на 10k) — для JVM-инициализации на свежем соединении. */
+    val PRAGMA = listOf(JOURNAL_PRAGMA) + CONNECTION_PRAGMA
 }

@@ -9,13 +9,23 @@ import dev.humanonly.db.Row
 /**
  * Реализация [Db]-порта поверх framework SQLite (Android). Зеркало тестового `JdbcDb` на JVM: гоняет
  * тот же SQL из [dev.humanonly.db.Schema] и `Sql*`-адаптеров — логики нет, маппинг 1:1. Паритет с JVM
- * проверяется instrumented-тестом (androidTest, отдельный чанк).
+ * проверяется Robolectric-юнит-тестом (`AndroidDbParityTest`, реальный framework SQLite на JVM).
  */
 class AndroidDb(private val db: SQLiteDatabase) : Db {
 
     override fun execScript(statements: List<String>) {
-        // PRAGMA journal_mode нельзя выполнять внутри транзакции — DDL/PRAGMA гоним по одному.
-        statements.forEach(db::execSQL)
+        // DDL/PRAGMA по одному (PRAGMA journal_mode нельзя внутри транзакции). ВАЖНО: `PRAGMA x=y`
+        // может ВОЗВРАЩАТЬ строку (journal_mode → "wal"/"memory"), а framework execSQL это запрещает
+        // ("Queries ... using query or rawQuery only") → упало бы на первой инициализации БД. Такой
+        // PRAGMA исполняем через rawQuery (он исполняет стейтмент и не против возврата). JVM-порт JdbcDb
+        // на это не натыкается: JDBC execute() безразличен к возврату. Паритет — AndroidDbParityTest.
+        statements.forEach { sql ->
+            if (sql.trimStart().startsWith("PRAGMA", ignoreCase = true) && sql.contains('=')) {
+                db.rawQuery(sql, null).use { it.moveToFirst() }
+            } else {
+                db.execSQL(sql)
+            }
+        }
     }
 
     override fun update(sql: String, args: List<Any?>): Int =
