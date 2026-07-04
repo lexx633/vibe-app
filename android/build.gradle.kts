@@ -56,6 +56,13 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
+    // Демукс flac-mp4 → сырой .flac (§F6-скачивание). ffmpeg-kit МЁРТВ (retired, CLAUDE.md) → Media3.
+    // Только extractor+datasource+common (парсинг ISO-BMFF/сэмплы FLAC), БЕЗ ExoPlayer-плеера и
+    // media3-transformer (транскод не нужен — контейнер перекладываем без перекодирования байтов FLAC).
+    implementation("androidx.media3:media3-extractor:1.10.1")
+    implementation("androidx.media3:media3-datasource:1.10.1")
+    implementation("androidx.media3:media3-common:1.10.1")
+
     // Паритет AndroidDb vs Schema без устройства: Robolectric поднимает реальный SQLite за
     // android.database.sqlite.SQLiteDatabase. JUnit4 — раннер Robolectric (core на JVM — JUnit5).
     testImplementation("junit:junit:4.13.2")
