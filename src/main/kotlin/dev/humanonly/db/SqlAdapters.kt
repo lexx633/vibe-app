@@ -63,6 +63,24 @@ class TrackRepository(
         return inserted
     }
 
+    /**
+     * Треки без `artist_id`, ещё не сканированные (`verdict IS NULL`), живые — кандидаты на обогащение
+     * метаданными ЯМ (чтобы заработал slopless-гейт каскада 0). Инкрементально: обогащённые не возвращаются.
+     */
+    fun tracksMissingArtist(limit: Int = 200): List<String> =
+        db.query(
+            "SELECT yandex_track_id FROM track WHERE artist_id IS NULL AND verdict IS NULL AND is_dead = 0 ORDER BY id LIMIT ?",
+            listOf(limit),
+        ) { it.string("yandex_track_id")!! }
+
+    /** Дозаполнить `artist_id` из метаданных ЯМ. Без audit — это не переход состояния §5, а обогащение. */
+    fun setArtistId(yandexTrackId: String, artistId: String) {
+        db.update(
+            "UPDATE track SET artist_id = ?, updated_at = ? WHERE yandex_track_id = ?",
+            listOf(artistId, now(), yandexTrackId),
+        )
+    }
+
     /** Записать вердикт детекции + переход + audit одной транзакцией логики (UPDATE track, INSERT audit_log). */
     fun writeVerdict(c: TrackCandidate, result: DetectionResult, from: TrackState, to: TrackState, detectorVersion: String) {
         val ts = now()

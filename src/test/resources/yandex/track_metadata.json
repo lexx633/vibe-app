@@ -1,0 +1,13 @@
+{
+  "result": [
+    {
+      "id": "100000001",
+      "available": true,
+      "artists": [
+        { "id": 999001, "name": "IGNORED_PII_ARTIST" },
+        { "id": 999002, "name": "IGNORED_PII_FEAT" }
+      ],
+      "title": "IGNORED_PII_TITLE"
+    }
+  ]
+}

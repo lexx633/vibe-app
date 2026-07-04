@@ -66,4 +66,53 @@ class LiveScanSourceTest {
         assertTrue(ex.cause is YandexThrottleException, "исходный троттлинг сохранён в cause для диагностики")
         assertEquals(0, scalarLong("SELECT COUNT(*) AS v FROM track"), "при троттлинге индекс не трогаем")
     }
+
+    // ── обогащение artist_id (для slopless-гейта) ──────────────────────────────
+
+    @Test
+    fun `enrich дозаполняет artist_id и он доходит до кандидата (гейт увидит артиста)`() {
+        val reader = LibraryReader { listOf(DiscoveredTrack("t1", null), DiscoveredTrack("t2", null)) }
+        val lookup = MetaLookup { id -> if (id == "t1") "999001" else "888002" }
+        val source = LiveScanSource(reader, repo, SqlScanSource(db), ArtistEnricher(repo, lookup))
+
+        val cands = source.newCandidates().associateBy { it.yandexTrackId }
+
+        assertEquals("999001", cands.getValue("t1").artistId, "artist_id обогащён и попал в кандидата")
+        assertEquals("888002", cands.getValue("t2").artistId)
+    }
+
+    @Test
+    fun `enrich идемпотентен - не трогает уже заполненные и уже сканированные`() {
+        repo.upsertDiscovered(listOf(DiscoveredTrack("t1", "already"), DiscoveredTrack("t2", null)))
+        db.update("UPDATE track SET verdict='clean' WHERE yandex_track_id='t1'") // сканирован → пропускается
+        repo.upsertDiscovered(listOf(DiscoveredTrack("t3", null)))
+
+        var calls = 0
+        val lookup = MetaLookup { id -> calls++; "resolved-$id" }
+        val n = ArtistEnricher(repo, lookup).enrich()
+
+        assertEquals(2, calls, "резолвим только t2 и t3 (t1 сканирован и с artist_id — мимо)")
+        assertEquals(2, n)
+        assertEquals("resolved-t2", db.query("SELECT artist_id AS v FROM track WHERE yandex_track_id='t2'") { it.string("v") }.first())
+    }
+
+    @Test
+    fun `enrich пропускает трек без артистов (lookup вернул null) - не падает`() {
+        repo.upsertDiscovered(listOf(DiscoveredTrack("t1", null)))
+        val n = ArtistEnricher(repo, MetaLookup { null }).enrich()
+
+        assertEquals(0, n, "null-артист не проставляется")
+        assertEquals(1, SqlScanSource(db).newCandidates().size, "трек остаётся в scan_delta (детект по метаданным)")
+    }
+
+    @Test
+    fun `троттлинг при обогащении тоже уходит в TransientException`() {
+        val reader = LibraryReader { listOf(DiscoveredTrack("t1", null)) }
+        val enricher = ArtistEnricher(repo, MetaLookup { throw YandexThrottleException(429, "throttled") })
+        val source = LiveScanSource(reader, repo, SqlScanSource(db), enricher)
+
+        assertThrows<TransientException> { source.newCandidates() }
+        // лайк уже зарегистрирован до обогащения — при ретрае обогатится (инкрементально)
+        assertEquals(1, scalarLong("SELECT COUNT(*) AS v FROM track"))
+    }
 }

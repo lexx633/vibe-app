@@ -3,6 +3,7 @@ package dev.humanonly.yandex
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * DTO ответов API ЯМ (kotlinx-serialization). Все — `ignoreUnknownKeys` через общий [YandexJson],
@@ -74,6 +75,20 @@ data class TrackMetadataResponse(val result: List<TrackMetadata> = emptyList())
 data class TrackMetadata(
     val id: String,
     val available: Boolean = false,
+    /** Артисты трека — берём ТОЛЬКО id (для slopless-гейта каскада 0). Имя артиста не парсим (PII §12). */
+    val artists: List<ArtistRef> = emptyList(),
     // Поля ниже — PII (§12): парсятся опционально, ядром не используются.
     val title: String? = null,
-)
+) {
+    /** id основного (первого) артиста — вход slopless-гейта; null, если артистов нет. */
+    fun primaryArtistId(): String? = artists.firstOrNull()?.artistId
+}
+
+/**
+ * Реф артиста трека. Парсим ТОЛЬКО `id` (имя — PII §12, не берём). id в API ЯМ приходит то числом,
+ * то строкой → храним как [JsonPrimitive] и отдаём `.content` (устойчиво к обоим представлениям).
+ */
+@Serializable
+data class ArtistRef(val id: JsonPrimitive) {
+    val artistId: String get() = id.content
+}

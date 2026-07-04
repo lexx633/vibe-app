@@ -2,11 +2,13 @@ package dev.humanonly.android
 
 import android.content.Context
 import dev.humanonly.config.FeatureFlags
+import dev.humanonly.db.ArtistEnricher
 import dev.humanonly.db.LiveScanSource
 import dev.humanonly.db.SqlScanSource
 import dev.humanonly.db.SqlVerdictSink
 import dev.humanonly.db.TrackRepository
 import dev.humanonly.db.YandexLibraryReader
+import dev.humanonly.db.YandexMetaLookup
 import dev.humanonly.detector.DetectionCascade
 import dev.humanonly.detector.MetadataScorer
 import dev.humanonly.detector.SloplessGate
@@ -58,9 +60,11 @@ object ServiceLocator {
         // индекс, офлайн). Live-стадия сама идёт через rate-limiter клиента (хард-правило 7); реальный
         // прогон против ЯМ включается лишь наличием токена (хард-правило 3 — токен кладётся с ДА).
         val indexDelta = SqlScanSource(db)
-        val scanSource: ScanSource = liveClient(ctx)
-            ?.let { LiveScanSource(YandexLibraryReader(it), repo, indexDelta) }
-            ?: indexDelta
+        val scanSource: ScanSource = liveClient(ctx)?.let { client ->
+            // Обогащаем artist_id новых треков из метаданных ЯМ → slopless-гейт каскада 0 работает.
+            val enricher = ArtistEnricher(repo, YandexMetaLookup(client))
+            LiveScanSource(YandexLibraryReader(client), repo, indexDelta, enricher)
+        } ?: indexDelta
 
         val run = CurationRun(
             flags = FeatureFlags.MVP,
@@ -100,12 +104,23 @@ object ServiceLocator {
     }
 
     /**
-     * База AI-артистов slopless грузится в рантайме (GPL — не вендорим в APK, CLAUDE.md §10). Если файла
-     * `assets/slopless.json` нет — пустой гейт (детект по одним метаданным, каскад 0 всегда мимо).
+     * База AI-артистов slopless грузится в РАНТАЙМЕ (GPL — не вендорим в APK, CLAUDE.md §10). Приоритет:
+     *   1. `filesDir/slopless.json` — снапшот, скачанный/подложенный на устройстве (НЕ в репо/APK);
+     *   2. `assets/slopless.json` — опциональный dev-снапшот (в публичный репо не коммитим);
+     *   3. пустой гейт — детект по одним метаданным, каскад 0 всегда мимо.
+     * Версия базы (timestamp снапшота) уходит в [SloplessGate.version] → slopless_db_version (§13).
      */
-    private fun loadGate(ctx: Context): SloplessGate =
-        runCatching {
-            ctx.applicationContext.assets.open("slopless.json").bufferedReader().use { it.readText() }
-        }.map(SloplessGate::fromJson)
-            .getOrElse { SloplessGate.fromJson("""{"timestamp":"absent","artists":[]}""") }
+    private fun loadGate(ctx: Context): SloplessGate {
+        val app = ctx.applicationContext
+        val runtime = java.io.File(app.filesDir, SLOPLESS_FILE)
+        val json = if (runtime.isFile) {
+            runCatching { runtime.readText() }.getOrNull()
+        } else {
+            runCatching { app.assets.open(SLOPLESS_FILE).bufferedReader().use { it.readText() } }.getOrNull()
+        }
+        return json?.let(SloplessGate::fromJson)
+            ?: SloplessGate.fromJson("""{"timestamp":"absent","artists":[]}""")
+    }
+
+    private const val SLOPLESS_FILE = "slopless.json"
 }

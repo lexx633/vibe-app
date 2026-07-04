@@ -37,4 +37,18 @@ class DtoParsingTest {
         val ids = resp.result.library.tracks.map { it.id }
         assertEquals(listOf("100000001", "100000002", "100000003"), ids)
     }
+
+    @Test
+    fun `track_metadata фикстура даёт primaryArtistId, имя-артиста не парсится (PII)`() {
+        val resp = YandexJson.decodeFromString(
+            TrackMetadataResponse.serializer(),
+            resource("/yandex/track_metadata.json"),
+        )
+        val track = resp.result.single()
+        assertEquals("100000001", track.id)
+        assertTrue(track.available)
+        // artist_id из числового JSON приходит как "999001" (JsonPrimitive устойчив к number/string).
+        assertEquals("999001", track.primaryArtistId())
+        assertEquals(listOf("999001", "999002"), track.artists.map { it.artistId })
+    }
 }
