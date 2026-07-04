@@ -2,9 +2,11 @@ package dev.humanonly.android
 
 import android.content.Context
 import dev.humanonly.config.FeatureFlags
+import dev.humanonly.db.LiveScanSource
 import dev.humanonly.db.SqlScanSource
 import dev.humanonly.db.SqlVerdictSink
 import dev.humanonly.db.TrackRepository
+import dev.humanonly.db.YandexLibraryReader
 import dev.humanonly.detector.DetectionCascade
 import dev.humanonly.detector.MetadataScorer
 import dev.humanonly.detector.SloplessGate
@@ -15,6 +17,7 @@ import dev.humanonly.schedule.CurationRun
 import dev.humanonly.schedule.RunConstraints
 import dev.humanonly.schedule.RunSchedule
 import dev.humanonly.schedule.RunScheduler
+import dev.humanonly.schedule.ScanSource
 import dev.humanonly.yandex.RateLimiter
 import dev.humanonly.yandex.YandexClient
 import dev.humanonly.yandex.YandexConfig
@@ -51,9 +54,17 @@ object ServiceLocator {
         val cascade = DetectionCascade(gate, MetadataScorer())
         val conveyor = ScanConveyor(cascade, SqlVerdictSink(repo, DETECTOR_VERSION))
 
+        // scan_delta из индекса; поверх — живой источник лайков ЯМ, если сохранён токен (иначе только
+        // индекс, офлайн). Live-стадия сама идёт через rate-limiter клиента (хард-правило 7); реальный
+        // прогон против ЯМ включается лишь наличием токена (хард-правило 3 — токен кладётся с ДА).
+        val indexDelta = SqlScanSource(db)
+        val scanSource: ScanSource = liveClient(ctx)
+            ?.let { LiveScanSource(YandexLibraryReader(it), repo, indexDelta) }
+            ?: indexDelta
+
         val run = CurationRun(
             flags = FeatureFlags.MVP,
-            scanSource = SqlScanSource(db),
+            scanSource = scanSource,
             conveyor = conveyor,
             schedule = schedule,
         )
@@ -63,10 +74,10 @@ object ServiceLocator {
     /**
      * Живой клиент ЯМ на платформенном [AndroidHttpTransport] (без новых зависимостей — `java.net.http`
      * на Android нет). Rate-limiter реальный: базово 1 rps, реальные `nanoTime`/`Thread.sleep` (хард-правило 7 —
-     * не отключается). Токен инъектируется вызывающим (источник — EncryptedSharedPreferences, отдельный чанк).
+     * не отключается). Токен инъектируется вызывающим (источник — [KeystoreTokenStore]).
      *
-     * В MVP-прогоне НЕ используется: scan_delta берётся из индекса ([SqlScanSource]). Клиент — для будущих
-     * стадий (скачивание/действия/restore), которые подключаются отдельными чанками с ДА.
+     * В MVP-прогоне используется как источник scan_delta: [liveClient] → [YandexLibraryReader] →
+     * [LiveScanSource] (лайки → индекс). Стадии скачивания/действий/restore — отдельные чанки с ДА.
      */
     /** Хранилище токена ЯМ на аппаратном Keystore (хард-правило 3/4). */
     fun tokenStore(ctx: Context): TokenStore = KeystoreTokenStore(ctx)
