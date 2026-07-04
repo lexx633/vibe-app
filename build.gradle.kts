@@ -4,7 +4,7 @@ plugins {
     // Объявлены (не применены) в корне, чтобы AGP и Kotlin-Android жили в ОДНОМ buildscript-classloader:
     // иначе KotlinAndroidTarget из корневого KGP не видит com.android.build...BaseVariant (NoClassDefFound).
     // Модуль :android применяет их без версии (наследует отсюда).
-    id("com.android.application") version "8.7.3" apply false
+    id("com.android.application") version "8.13.0" apply false
     kotlin("android") version "2.0.21" apply false
 }
 

@@ -10,10 +10,11 @@ application). Он собирается только с Android SDK/AGP — JVM-
 Реальные файлы (`android/src/main/kotlin/dev/humanonly/android/`): `AndroidDb`, `CurationOpenHelper`,
 `CurationWorker`, `WorkScheduler`, `DeviceStateReader`, `ServiceLocator`. Сниппеты ниже — пояснение к ним.
 
-Тулчейн (проверено, `./gradlew :android:assembleDebug` зелёный): AGP **8.7.3**, Gradle 8.10, Kotlin 2.0.21,
-`androidx.work:work-runtime-ktx:2.9.1`, minSdk 26, **compileSdk 35** (Android 15). compileSdk 37 (Android 17)
-использует новую minor-versioned схему платформы (папка `android-37.0`), которую AGP 8.7.3 не читает →
-вернёмся к 37 после апгрейда AGP+Gradle. Для тонкого адаптера разница API 35↔37 несущественна.
+Тулчейн (проверено, `./gradlew :android:assembleDebug` зелёный): AGP **8.13.0**, Gradle 8.13, Kotlin 2.0.21,
+`androidx.work:work-runtime-ktx:2.9.1`, minSdk 26, **compileSdk 36** (Android 16, buildTools 36.0.0). compileSdk 37
+(Android 17) использует новую minor-versioned схему платформы (папка `android-37.0`, SDK XML v4), которую читает
+только AGP 9.1+ → Gradle 9.3.1 + Kotlin 2.2.10 (мажор, пересборка верифицированного core новым компилятором) —
+отложено осознанно. Для тонкого адаптера разница API 36↔37 несущественна.
 
 ## 1. CoroutineWorker поверх RunScheduler
 

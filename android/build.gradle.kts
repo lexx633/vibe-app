@@ -6,16 +6,17 @@ plugins {
 
 android {
     namespace = "dev.humanonly"
-    // compileSdk 35 (Android 15): нативно поддержан AGP 8.7.3. android-37 (Android 17) использует новую
-    // minor-versioned схему (папка android-37.0), которую этот AGP не читает — вернёмся к 37, когда
-    // поднимем AGP+Gradle. Для тонкого адаптера (WorkManager+SQLite) разница API 35↔37 несущественна.
-    compileSdk = 35
-    buildToolsVersion = "35.0.0"
+    // compileSdk 36 (Android 16) на AGP 8.13 (макс. API 36.1) + Gradle 8.13, Kotlin остаётся 2.0.21 —
+    // 8.x-линия, верифицированный core новым компилятором НЕ пересобирается. compileSdk 37 (Android 17)
+    // требует AGP 9.1+ → Gradle 9.3.1 + Kotlin 2.2.10 (мажор, риск регрессий) — отложено осознанно.
+    // Для тонкого адаптера (WorkManager+SQLite) разница API 36↔37 несущественна.
+    compileSdk = 36
+    buildToolsVersion = "36.0.0"
 
     defaultConfig {
         applicationId = "dev.humanonly"
         minSdk = 26 // Android 8.0 — WorkManager + framework SQLite WAL стабильны.
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
     }
