@@ -26,7 +26,7 @@ jobs:
 
       - name: Upload test report
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: test-results
           path: build/reports/tests/test
@@ -60,7 +60,7 @@ jobs:
 
       - name: Upload debug APK
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: android-debug-apk
           path: android/build/outputs/apk/debug/*.apk
@@ -68,7 +68,7 @@ jobs:
 
       - name: Upload android test report
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: android-test-results
           path: android/build/reports/tests/testDebugUnitTest
