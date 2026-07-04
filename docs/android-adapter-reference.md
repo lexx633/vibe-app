@@ -1,11 +1,19 @@
-# Android-адаптеры планировщика и БД — референс (не компилируется этим модулем)
+# Android-адаптеры планировщика и БД — референс + реальный модуль `:android`
 
-Модуль `app/` — чистый `kotlin("jvm")`: вся логика framework-agnostic и покрыта JVM-тестами. Android-склейка
-(androidx.work + framework SQLite) переносится в отдельный `:android` модуль, когда приложение собирается
-целиком. Ниже — тонкие адаптеры-референсы: они лишь мостят уже оттестированные `RunScheduler` и `Db`-порт в
-Android API. Логики в них нет — значит и тестировать в них нечего (маппинг 1:1).
+Корневой модуль (`:`) — чистый `kotlin("jvm")`: вся логика framework-agnostic и покрыта JVM-тестами.
+Android-склейка (androidx.work + framework SQLite) живёт в реальном Gradle-модуле **`android/`** (AGP
+application). Он собирается только с Android SDK/AGP — JVM-CI его не трогает (`:android` включается в
+`settings.gradle.kts` лишь при наличии `local.properties`). Адаптеры лишь мостят уже оттестированные
+`RunScheduler` и `Db`-порт в Android API. Логики в них нет — значит и тестировать в них нечего (маппинг 1:1);
+паритет `AndroidDb` с `JdbcDb` проверит instrumented-тест (androidTest, отдельный чанк).
 
-Зависимости `:android` модуля (пример): `androidx.work:work-runtime-ktx`, framework `android.database.sqlite`.
+Реальные файлы (`android/src/main/kotlin/dev/humanonly/android/`): `AndroidDb`, `CurationOpenHelper`,
+`CurationWorker`, `WorkScheduler`, `DeviceStateReader`, `ServiceLocator`. Сниппеты ниже — пояснение к ним.
+
+Тулчейн (проверено, `./gradlew :android:assembleDebug` зелёный): AGP **8.7.3**, Gradle 8.10, Kotlin 2.0.21,
+`androidx.work:work-runtime-ktx:2.9.1`, minSdk 26, **compileSdk 35** (Android 15). compileSdk 37 (Android 17)
+использует новую minor-versioned схему платформы (папка `android-37.0`), которую AGP 8.7.3 не читает →
+вернёмся к 37 после апгрейда AGP+Gradle. Для тонкого адаптера разница API 35↔37 несущественна.
 
 ## 1. CoroutineWorker поверх RunScheduler
 
@@ -127,10 +135,20 @@ class AndroidDb(private val db: SQLiteDatabase) : Db {
 > `Schema.PRAGMA` + таблицы + 4 индекса). Дальше `SqlScanSource`/`SqlVerdictSink`/`SqlActionQueue`/… работают
 > без изменений — они зависят только от `Db`, а не от драйвера.
 
-## Что остаётся сделать в `:android` модуле
+## Статус `:android` модуля
 
-- Настроить AGP + Android SDK + отдельный CI-джоб (assembleDebug), т.к. JVM-CI это не собирает.
-- DI/ServiceLocator: собрать `YandexConfig` (токен из EncryptedSharedPreferences), `YandexClient`,
-  `CurationRun` (флаги, каскад, `Sql*`-адаптеры, `YandexLibraryActions`, `Archiver`), `RunScheduler`.
-- `readDeviceState` — точная карта системных сигналов в `DeviceState`.
-- Instrumented-тест (androidTest) на реальном устройстве/эмуляторе: `AndroidDb` против `Schema` (паритет с `JdbcDb`).
+Сделано (`./gradlew :android:assembleDebug` → `android-debug.apk` зелёный, core дексуется):
+- AGP + модуль `android/` + `settings.gradle.kts` (условный `include(":android")` по `local.properties`).
+- `AndroidDb` (Db-порт поверх `SQLiteDatabase`), `CurationOpenHelper` (`onCreate → initSchema`).
+- `CurationWorker : CoroutineWorker` (маппинг `NextAction → Result`), `WorkScheduler.schedule()`.
+- `readDeviceState` (Connectivity/Battery/Power → `DeviceState`).
+- `ServiceLocator` (MVP: gate+метаданные, `SqlScanSource`/`SqlVerdictSink`; auto_dislike/archive off).
+
+Остаётся (отдельные чанки, нужен ДА):
+- Отдельный CI-джоб `assembleDebug` (с Android SDK) — JVM-CI это не собирает.
+- Полный DI: `YandexConfig` (токен из EncryptedSharedPreferences), `YandexClient` + Android-транспорт
+  (OkHttp/HttpURLConnection — `java.net.http` на Android нет), `ActionDispatcher`, `Archiver`, `restore`.
+- Загрузка базы slopless в рантайме (assets/скачивание, GPL — не вендорить), `MetaResolver` из DTO ЯМ.
+- Апгрейд AGP+Gradle → вернуть compileSdk 37 (minor-versioned платформа).
+- Instrumented-тест (androidTest) на устройстве/эмуляторе: `AndroidDb` против `Schema` (паритет с `JdbcDb`).
+- UI (обзор/review-очередь), точка входа (`Activity`/`Application`, регистрация `WorkScheduler.schedule`).
