@@ -23,6 +23,8 @@ class YandexLibraryActions(
 
     override fun undislike(trackId: String): Boolean = client.undislikeTrack(userId, trackId)
 
+    override fun like(trackId: String): Boolean = client.likeTrack(userId, trackId)
+
     override fun addToPlaylist(trackId: String, playlistKind: String): Boolean =
         throw UnsupportedOperationException(
             "MOVE_TO_PLAYLIST через живой ЯМ не подключён (нужен album-aware change-relative, референс-репо, v1.1)",

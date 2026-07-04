@@ -21,6 +21,7 @@ class ActionDispatcherTest {
         val calls = mutableListOf<Pair<ActionOp, String>>()
         override fun dislike(trackId: String): Boolean { calls += ActionOp.DISLIKE to trackId; return changed }
         override fun undislike(trackId: String): Boolean { calls += ActionOp.UNDISLIKE to trackId; return changed }
+        override fun like(trackId: String): Boolean { calls += ActionOp.RELIKE to trackId; return changed }
         override fun addToPlaylist(trackId: String, playlistKind: String): Boolean {
             calls += ActionOp.ADD_TO_PLAYLIST to trackId; return changed
         }
@@ -162,8 +163,11 @@ class ActionDispatcherTest {
         val d = ActionDispatcher(ActionMode.MOVE_TO_PLAYLIST, lib, sink, okBackup, aiPlaylistKind = playlist)
         val r = d.rollback("t1", TrackState.MOVED_TO_PLAYLIST)
         assertTrue(r.executed)
-        // обратный порядок: сначала убрать из плейлиста, затем снять дизлайк
-        assertEquals(listOf(ActionOp.REMOVE_FROM_PLAYLIST to "t1", ActionOp.UNDISLIKE to "t1"), lib.calls)
+        // обратный порядок: убрать из плейлиста → снять дизлайк → вернуть лайк (дизлайк ЯМ снял лайк)
+        assertEquals(
+            listOf(ActionOp.REMOVE_FROM_PLAYLIST to "t1", ActionOp.UNDISLIKE to "t1", ActionOp.RELIKE to "t1"),
+            lib.calls,
+        )
         // финальный коммит — перевод в human_confirmed
         val last = sink.commits.last()
         assertEquals(ActionOp.WHITELIST, last.op)
@@ -172,13 +176,13 @@ class ActionDispatcherTest {
     }
 
     @Test
-    fun `rollback из disliked — только снять дизлайк`() {
+    fun `rollback из disliked — снять дизлайк и вернуть лайк (дизлайк ЯМ снимает лайк)`() {
         val lib = RecordingLibrary()
         val sink = RecordingSink()
         val d = ActionDispatcher(ActionMode.DISLIKE_ONLY, lib, sink, okBackup)
         val r = d.rollback("t1", TrackState.DISLIKED)
         assertTrue(r.executed)
-        assertEquals(listOf(ActionOp.UNDISLIKE to "t1"), lib.calls)
+        assertEquals(listOf(ActionOp.UNDISLIKE to "t1", ActionOp.RELIKE to "t1"), lib.calls)
         assertEquals(TrackState.HUMAN_CONFIRMED, sink.commits.last().to)
     }
 

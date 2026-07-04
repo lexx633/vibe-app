@@ -72,6 +72,33 @@ class YandexLibraryActionsTest {
     }
 
     @Test
+    fun `likeAdd и likeRemove строят ожидаемые url и form (референс-репо)`() {
+        assertEquals(
+            "https://api.example.test/users/u1/likes/tracks/add-multiple",
+            Endpoints.likeAdd(config, "u1", "555").url,
+        )
+        assertEquals(mapOf("track-ids" to "555"), Endpoints.likeAdd(config, "u1", "555").params)
+        assertEquals(
+            "https://api.example.test/users/u1/likes/tracks/remove",
+            Endpoints.likeRemove(config, "u1", "555").url,
+        )
+    }
+
+    @Test
+    fun `like через адаптер шлёт POST на likes add-multiple с track-ids`() {
+        val t = CapturingTransport()
+        val lib: LibraryActions = YandexLibraryActions(client(t), userId = "u1")
+
+        assertTrue(lib.like("555"))
+
+        assertEquals(1, t.posts.size)
+        val (url, form, headers) = t.posts.first()
+        assertEquals("https://api.example.test/users/u1/likes/tracks/add-multiple", url)
+        assertEquals("555", form["track-ids"])
+        assertTrue(headers["Authorization"]!!.startsWith("OAuth "), "запрос авторизован, токен не в url")
+    }
+
+    @Test
     fun `create резолвит uid аккаунта и использует его в пути`() {
         val t = CapturingTransport()
         val lib = YandexLibraryActions.create(client(t))

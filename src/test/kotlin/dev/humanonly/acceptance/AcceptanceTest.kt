@@ -47,10 +47,12 @@ class AcceptanceTest {
     // Идемпотентная библиотека с журналом вызовов: add/remove возвращают «фактически изменилось».
     private class StatefulLibrary : LibraryActions {
         val disliked = HashSet<String>()
+        val liked = HashSet<String>()
         val playlist = HashSet<String>()
         val calls = mutableListOf<ActionOp>()
         override fun dislike(trackId: String): Boolean { calls += ActionOp.DISLIKE; return disliked.add(trackId) }
         override fun undislike(trackId: String): Boolean { calls += ActionOp.UNDISLIKE; return disliked.remove(trackId) }
+        override fun like(trackId: String): Boolean { calls += ActionOp.RELIKE; return liked.add(trackId) }
         override fun addToPlaylist(trackId: String, playlistKind: String): Boolean {
             calls += ActionOp.ADD_TO_PLAYLIST; return playlist.add(trackId)
         }
@@ -110,6 +112,7 @@ class AcceptanceTest {
         d.rollback("t1", TrackState.MOVED_TO_PLAYLIST)
         assertTrue(lib.disliked.isEmpty(), "дизлайк снят")
         assertTrue(lib.playlist.isEmpty(), "убран из плейлиста")
+        assertTrue("t1" in lib.liked, "лайк возвращён (дизлайк ЯМ его снимает — откат обязан вернуть)")
         assertEquals(TrackState.HUMAN_CONFIRMED, sink.last().to)
     }
 

@@ -45,6 +45,20 @@ object Endpoints {
         Request("${config.baseUrl}/tracks/$trackId", emptyMap())
 
     /**
+     * Поставить лайк треку: `POST users/{uid}/likes/tracks/add-multiple` (form `track-ids`).
+     * Выверено по референс-репо (MarshalX/yandex-music-api `_client/likes.py`: путь
+     * `likes/{object_type}s/{action}`, action=`add-multiple`, поле `{object_type}-ids`) — хард-правило 9.
+     * Нужен для F7-восстановления: живой дизлайк ЯМ СНИМАЕТ лайк, поэтому корректный откат «не ИИ»
+     * обязан вернуть лайк (undislike сам по себе его не восстанавливает).
+     */
+    fun likeAdd(config: YandexConfig, userId: String, trackId: String): Request =
+        Request("${config.baseUrl}/users/$userId/likes/tracks/add-multiple", mapOf("track-ids" to trackId))
+
+    /** Снять лайк: `POST users/{uid}/likes/tracks/remove` (form `track-ids`). Обратная операция к [likeAdd]. */
+    fun likeRemove(config: YandexConfig, userId: String, trackId: String): Request =
+        Request("${config.baseUrl}/users/$userId/likes/tracks/remove", mapOf("track-ids" to trackId))
+
+    /**
      * Список дизлайков (read-only). `GET users/{uid}/dislikes/tracks` — по референс-репо
      * (MarshalX/yandex-music-api `_client/likes.py::_get_dislikes`). Тот же shape ответа, что likes
      * (`result.library.tracks[].id`). Нужен для верификации/отката живого дизлайка.

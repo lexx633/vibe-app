@@ -63,3 +63,13 @@ tasks.register<JavaExec>("liveDislike") {
     mainClass.set("dev.humanonly.yandex.tools.LiveDislikeKt")
     classpath = sourceSets["test"].runtimeClasspath
 }
+
+// Живое F7-восстановление лайков из бэкапа (§F7, хард-правило 5): дизлайк ЯМ снимает лайк, undislike его
+// не возвращает — этот инструмент ре-лайкает недостающие треки по снятому ранее бэкапу.
+// gradlew liveRestoreLike --args="<токен> <likes-live-*.json> [--execute]"
+tasks.register<JavaExec>("liveRestoreLike") {
+    group = "verification"
+    description = "Живое восстановление лайков из бэкапа: dry-run по умолчанию; --execute = вернуть лайки (тест-акк)"
+    mainClass.set("dev.humanonly.yandex.tools.LiveRestoreLikeKt")
+    classpath = sourceSets["test"].runtimeClasspath
+}

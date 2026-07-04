@@ -221,8 +221,10 @@ class SqlAdaptersTest {
 
     private class RecordingLibrary : LibraryActions {
         val disliked = HashSet<String>()
+        val liked = HashSet<String>()
         override fun dislike(trackId: String) = disliked.add(trackId)
         override fun undislike(trackId: String) = disliked.remove(trackId)
+        override fun like(trackId: String) = liked.add(trackId)
         override fun addToPlaylist(trackId: String, playlistKind: String) = true
         override fun removeFromPlaylist(trackId: String, playlistKind: String) = true
     }

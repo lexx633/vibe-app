@@ -93,6 +93,7 @@ class ActionDispatcher(
         ActionOp.DISLIKE -> library.dislike(trackId)
         ActionOp.ADD_TO_PLAYLIST -> library.addToPlaylist(trackId, aiPlaylistKind)
         ActionOp.UNDISLIKE -> library.undislike(trackId)
+        ActionOp.RELIKE -> library.like(trackId)
         ActionOp.REMOVE_FROM_PLAYLIST -> library.removeFromPlaylist(trackId, aiPlaylistKind)
         ActionOp.WHITELIST -> false // сам перевод состояния — без акк-операции
     }
@@ -113,7 +114,10 @@ class ActionDispatcher(
             undo += ActionStep(trackId, ActionOp.REMOVE_FROM_PLAYLIST, currentState, currentState)
         }
         if (rank >= CHAIN_RANK.getValue(TrackState.DISLIKED)) {
+            // Живой дизлайк ЯМ СНИМАЕТ лайк (проверено на тест-акке 2026-07-04), поэтому полный отк­ат «не ИИ»
+            // = снять дизлайк И вернуть лайк. Порядок: сначала undislike, затем relike (взаимоисключающие списки).
             undo += ActionStep(trackId, ActionOp.UNDISLIKE, currentState, currentState)
+            undo += ActionStep(trackId, ActionOp.RELIKE, currentState, currentState)
         }
         return undo
     }
@@ -158,7 +162,7 @@ data class ActionCandidate(
 )
 
 /** Атомарная операция шага (акк-эффект + узел графа). WHITELIST — чистый перевод состояния «не ИИ». */
-enum class ActionOp { DISLIKE, ADD_TO_PLAYLIST, UNDISLIKE, REMOVE_FROM_PLAYLIST, WHITELIST }
+enum class ActionOp { DISLIKE, ADD_TO_PLAYLIST, UNDISLIKE, RELIKE, REMOVE_FROM_PLAYLIST, WHITELIST }
 
 /** Шаг плана: одна операция + ребро §5 (from→to). Для undo from==to (только акк-эффект, без смены узла). */
 data class ActionStep(
@@ -192,6 +196,12 @@ data class ActionResult(
 interface LibraryActions {
     fun dislike(trackId: String): Boolean
     fun undislike(trackId: String): Boolean
+
+    /**
+     * Вернуть лайк (F7-восстановление при откате «не ИИ»). Живой дизлайк ЯМ снимает лайк, поэтому
+     * [ActionDispatcher.rollback] из `disliked` обязан не только снять дизлайк, но и вернуть лайк.
+     */
+    fun like(trackId: String): Boolean
     fun addToPlaylist(trackId: String, playlistKind: String): Boolean
     fun removeFromPlaylist(trackId: String, playlistKind: String): Boolean
 
@@ -199,6 +209,7 @@ interface LibraryActions {
     object Noop : LibraryActions {
         override fun dislike(trackId: String): Boolean = false
         override fun undislike(trackId: String): Boolean = false
+        override fun like(trackId: String): Boolean = false
         override fun addToPlaylist(trackId: String, playlistKind: String): Boolean = false
         override fun removeFromPlaylist(trackId: String, playlistKind: String): Boolean = false
     }

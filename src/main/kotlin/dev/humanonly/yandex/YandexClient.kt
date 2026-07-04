@@ -70,6 +70,21 @@ class YandexClient(
         return true
     }
 
+    /**
+     * Поставить лайк (F7-восстановление). Живой дизлайк ЯМ снимает лайк, поэтому корректный откат
+     * «не ИИ» обязан вернуть лайк отдельным вызовом. Идёт через лимитер (хард-правило 7). true при 2xx.
+     */
+    fun likeTrack(userId: String, trackId: String): Boolean {
+        callPost(Endpoints.likeAdd(config, userId, trackId))
+        return true
+    }
+
+    /** Снять лайк (обратная к [likeTrack]). true при подтверждённом 2xx. */
+    fun unlikeTrack(userId: String, trackId: String): Boolean {
+        callPost(Endpoints.likeRemove(config, userId, trackId))
+        return true
+    }
+
     private fun call(req: Endpoints.Request): String {
         rateLimiter.acquire()
         return try {
