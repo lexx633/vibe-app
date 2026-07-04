@@ -77,11 +77,16 @@ data class TrackMetadata(
     val available: Boolean = false,
     /** Артисты трека — берём ТОЛЬКО id (для slopless-гейта каскада 0). Имя артиста не парсим (PII §12). */
     val artists: List<ArtistRef> = emptyList(),
+    /** Альбомы трека — берём ТОЛЬКО id (нужен albumId для album-aware вставки в плейлист, §F4). */
+    val albums: List<AlbumRef> = emptyList(),
     // Поля ниже — PII (§12): парсятся опционально, ядром не используются.
     val title: String? = null,
 ) {
     /** id основного (первого) артиста — вход slopless-гейта; null, если артистов нет. */
     fun primaryArtistId(): String? = artists.firstOrNull()?.artistId
+
+    /** id основного (первого) альбома — обязателен для `change-relative` вставки; null, если альбомов нет. */
+    fun primaryAlbumId(): String? = albums.firstOrNull()?.albumId
 }
 
 /**
@@ -92,3 +97,41 @@ data class TrackMetadata(
 data class ArtistRef(val id: JsonPrimitive) {
     val artistId: String get() = id.content
 }
+
+/** Реф альбома трека. Только `id` (имя альбома — PII §12, не берём). id устойчив к number/string. */
+@Serializable
+data class AlbumRef(val id: JsonPrimitive) {
+    val albumId: String get() = id.content
+}
+
+// ── users/{uid}/playlists/{kind} (revision + состав для change-relative) ───────
+
+@Serializable
+data class PlaylistResponse(val result: PlaylistBody)
+
+/**
+ * Плейлист: `revision` (обязателен для `change-relative` — API отклонит запрос с устаревшей ревизией)
+ * и состав `tracks` (TrackShort: id + albumId) — по нему считаем индекс вставки/удаления.
+ */
+@Serializable
+data class PlaylistBody(
+    val kind: JsonPrimitive? = null,
+    val revision: Int = 1,
+    @SerialName("trackCount") val trackCount: Int = 0,
+    val tracks: List<PlaylistTrackRef> = emptyList(),
+) {
+    val kindStr: String? get() = kind?.content
+}
+
+/** Трек в плейлисте (TrackShort референс-репо): `id` + `albumId`. Имя/название не парсим (PII §12). */
+@Serializable
+data class PlaylistTrackRef(
+    val id: JsonPrimitive,
+    @SerialName("albumId") val albumId: String? = null,
+) {
+    val trackId: String get() = id.content
+}
+
+/** Ответ создания плейлиста — тот же shape, что и чтение (result = плейлист). Нужен `kind` нового плейлиста. */
+@Serializable
+data class PlaylistCreateResponse(val result: PlaylistBody)

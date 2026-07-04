@@ -77,4 +77,36 @@ object Endpoints {
     /** Снять дизлайк: `POST users/{uid}/dislikes/tracks/remove` (form `track-ids`). Откат «не ИИ». */
     fun dislikeRemove(config: YandexConfig, userId: String, trackId: String): Request =
         Request("${config.baseUrl}/users/$userId/dislikes/tracks/remove", mapOf("track-ids" to trackId))
+
+    // ── плейлист «Определены как ИИ треки» (§F4 MOVE_TO_PLAYLIST) ─────────────────
+    // Выверено по референс-репо (MarshalX/yandex-music-api `_client/playlists.py`, хард-правило 9).
+
+    /** Чтение плейлиста (revision + состав для change-relative): `GET users/{uid}/playlists/{kind}`. */
+    fun playlist(config: YandexConfig, userId: String, kind: String): Request =
+        Request("${config.baseUrl}/users/$userId/playlists/$kind", emptyMap())
+
+    /**
+     * Изменение состава плейлиста: `POST users/{uid}/playlists/{kind}/change`
+     * (form `kind`, `revision`, `diff` — референс-репо: `data = {'kind', 'revision', 'diff'}`).
+     * `diff` — JSON-массив операций (см. [PlaylistDiff]); `revision` обязателен (иначе API отклонит).
+     */
+    fun playlistChange(config: YandexConfig, userId: String, kind: String, revision: Int, diff: String): Request =
+        Request(
+            "${config.baseUrl}/users/$userId/playlists/$kind/change",
+            mapOf("kind" to kind, "revision" to revision.toString(), "diff" to diff),
+        )
+
+    /**
+     * Создание плейлиста: `POST users/{uid}/playlists/create` (form `title`, `visibility`).
+     * visibility=`private` по умолчанию (наш служебный плейлист приватный, не `public` как в референс-репо).
+     */
+    fun playlistCreate(config: YandexConfig, userId: String, title: String, visibility: String = "private"): Request =
+        Request(
+            "${config.baseUrl}/users/$userId/playlists/create",
+            mapOf("title" to title, "visibility" to visibility),
+        )
+
+    /** Удаление плейлиста целиком: `POST users/{uid}/playlists/{kind}/delete`. Нужно для очистки live-теста. */
+    fun playlistDelete(config: YandexConfig, userId: String, kind: String): Request =
+        Request("${config.baseUrl}/users/$userId/playlists/$kind/delete", emptyMap())
 }

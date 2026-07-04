@@ -2,7 +2,7 @@ package dev.humanonly.yandex
 
 import dev.humanonly.pipeline.LibraryActions
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -130,10 +130,96 @@ class YandexLibraryActionsTest {
         assertEquals(listOf("555", "777"), client(transport).dislikedTrackIds("u1"))
     }
 
+    // ── MOVE_TO_PLAYLIST: album-aware change-relative (референс-репо) ─────────────
+
+    /**
+     * Fake, маршрутизирующий GET по url: снимок плейлиста (revision+состав) и метаданные трека (albumId).
+     * POST-и (change/create) записывает. Живых вызовов к ЯМ нет.
+     */
+    private class PlaylistTransport(
+        private val playlistJson: String,
+        private val trackMetaJson: String = """{"result":[{"id":"42","available":true,"albums":[{"id":"777"}]}]}""",
+    ) : YandexTransport {
+        val posts = mutableListOf<Triple<String, Map<String, String>, Map<String, String>>>()
+
+        override fun getJson(url: String, params: Map<String, String>, headers: Map<String, String>): String = when {
+            url.endsWith("/playlists/1000") -> playlistJson
+            url.contains("/tracks/") -> trackMetaJson
+            else -> error("неожиданный GET: $url")
+        }
+
+        override fun postForm(url: String, form: Map<String, String>, headers: Map<String, String>): String {
+            posts += Triple(url, form, headers)
+            return """{"result":{"kind":2001,"revision":1,"trackCount":0,"tracks":[]}}"""
+        }
+
+        override fun getBytes(url: String, headers: Map<String, String>): ByteArray = ByteArray(0)
+        override fun getRange(url: String, from: Long, to: Long?, headers: Map<String, String>): ByteArray = ByteArray(0)
+    }
+
+    private val playlistWith999 =
+        """{"result":{"kind":1000,"revision":5,"trackCount":1,"tracks":[{"id":"999","albumId":"aa"}]}}"""
+
     @Test
-    fun `плейлист-операции в MVP явно не поддержаны (не молчат)`() {
-        val lib = YandexLibraryActions(client(CapturingTransport()), userId = "u1")
-        assertThrows(UnsupportedOperationException::class.java) { lib.addToPlaylist("1", "ai") }
-        assertThrows(UnsupportedOperationException::class.java) { lib.removeFromPlaylist("1", "ai") }
+    fun `addToPlaylist резолвит albumId и шлёт change с insert-diff по текущей ревизии`() {
+        val t = PlaylistTransport(playlistWith999)
+        val lib = YandexLibraryActions(client(t), userId = "u1")
+
+        assertTrue(lib.addToPlaylist("42", "1000"))
+
+        assertEquals(1, t.posts.size)
+        val (url, form, headers) = t.posts.first()
+        assertEquals("https://api.example.test/users/u1/playlists/1000/change", url)
+        assertEquals("1000", form["kind"])
+        assertEquals("5", form["revision"], "ревизия из снимка плейлиста (оптимистичная блокировка)")
+        // вставка в конец (at=1, т.к. один трек уже есть) с album-aware id
+        assertEquals("""[{"op":"insert","at":1,"tracks":[{"id":"42","albumId":"777"}]}]""", form["diff"])
+        assertTrue(headers["Authorization"]!!.startsWith("OAuth "))
+    }
+
+    @Test
+    fun `addToPlaylist идемпотентен — трек уже в плейлисте → no-op без change`() {
+        val t = PlaylistTransport(playlistWith999)
+        val lib = YandexLibraryActions(client(t), userId = "u1")
+
+        assertFalse(lib.addToPlaylist("999", "1000"))
+        assertTrue(t.posts.isEmpty(), "уже в плейлисте — акк не трогаем")
+    }
+
+    @Test
+    fun `removeFromPlaylist удаляет по индексу трека диапазоном от i до i+1`() {
+        val t = PlaylistTransport(playlistWith999)
+        val lib = YandexLibraryActions(client(t), userId = "u1")
+
+        assertTrue(lib.removeFromPlaylist("999", "1000"))
+        val (url, form, _) = t.posts.first()
+        assertEquals("https://api.example.test/users/u1/playlists/1000/change", url)
+        assertEquals("""[{"op":"delete","from":0,"to":1}]""", form["diff"])
+    }
+
+    @Test
+    fun `removeFromPlaylist идемпотентен — трека нет → no-op без change`() {
+        val t = PlaylistTransport(playlistWith999)
+        val lib = YandexLibraryActions(client(t), userId = "u1")
+
+        assertFalse(lib.removeFromPlaylist("42", "1000"))
+        assertTrue(t.posts.isEmpty())
+    }
+
+    @Test
+    fun `createPlaylist шлёт POST create с title и приватной видимостью, возвращает kind`() {
+        val transport = object : YandexTransport {
+            override fun getJson(url: String, params: Map<String, String>, headers: Map<String, String>) =
+                """{"result":{"account":{"uid":424242}}}"""
+            override fun postForm(url: String, form: Map<String, String>, headers: Map<String, String>): String {
+                assertEquals("https://api.example.test/users/u1/playlists/create", url)
+                assertEquals("Определены как ИИ треки", form["title"])
+                assertEquals("private", form["visibility"])
+                return """{"result":{"kind":3003,"revision":1,"trackCount":0,"tracks":[]}}"""
+            }
+            override fun getBytes(url: String, headers: Map<String, String>) = ByteArray(0)
+            override fun getRange(url: String, from: Long, to: Long?, headers: Map<String, String>) = ByteArray(0)
+        }
+        assertEquals("3003", client(transport).createPlaylist("u1", "Определены как ИИ треки"))
     }
 }

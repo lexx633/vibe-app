@@ -73,3 +73,13 @@ tasks.register<JavaExec>("liveRestoreLike") {
     mainClass.set("dev.humanonly.yandex.tools.LiveRestoreLikeKt")
     classpath = sourceSets["test"].runtimeClasspath
 }
+
+// Живой smoke MOVE_TO_PLAYLIST (§F4): изолированный album-aware add/remove в СВОЙ временный плейлист,
+// полностью обратим (плейлист удаляется за собой), лайки/дизлайки не трогает.
+// gradlew livePlaylistMove --args="<токен> [--execute]"
+tasks.register<JavaExec>("livePlaylistMove") {
+    group = "verification"
+    description = "Живой album-aware перенос в плейлист: dry-run по умолчанию; --execute = add/remove/cleanup (тест-акк)"
+    mainClass.set("dev.humanonly.yandex.tools.LivePlaylistMoveKt")
+    classpath = sourceSets["test"].runtimeClasspath
+}

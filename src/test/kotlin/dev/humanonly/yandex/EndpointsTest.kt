@@ -56,4 +56,37 @@ class EndpointsTest {
             Endpoints.trackMetadata(config, "999").url,
         )
     }
+
+    @Test
+    fun `playlist read url по референс-репо`() {
+        assertEquals(
+            "https://api.example.test/users/u1/playlists/1000",
+            Endpoints.playlist(config, "u1", "1000").url,
+        )
+    }
+
+    @Test
+    fun `playlistChange — url change и форма kind-revision-diff`() {
+        val req = Endpoints.playlistChange(config, "u1", "1000", revision = 5, diff = "[]")
+        assertEquals("https://api.example.test/users/u1/playlists/1000/change", req.url)
+        assertEquals("1000", req.params["kind"])
+        assertEquals("5", req.params["revision"])
+        assertEquals("[]", req.params["diff"])
+    }
+
+    @Test
+    fun `playlistCreate — url create и приватная видимость по умолчанию`() {
+        val req = Endpoints.playlistCreate(config, "u1", "AI")
+        assertEquals("https://api.example.test/users/u1/playlists/create", req.url)
+        assertEquals("AI", req.params["title"])
+        assertEquals("private", req.params["visibility"])
+    }
+
+    @Test
+    fun `playlistDelete — url delete по референс-репо`() {
+        assertEquals(
+            "https://api.example.test/users/u1/playlists/1000/delete",
+            Endpoints.playlistDelete(config, "u1", "1000").url,
+        )
+    }
 }

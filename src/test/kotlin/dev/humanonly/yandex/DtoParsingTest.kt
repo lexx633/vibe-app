@@ -51,4 +51,27 @@ class DtoParsingTest {
         assertEquals("999001", track.primaryArtistId())
         assertEquals(listOf("999001", "999002"), track.artists.map { it.artistId })
     }
+
+    @Test
+    fun `track_metadata даёт primaryAlbumId (album-aware вставка), id устойчив к number-string`() {
+        val resp = YandexJson.decodeFromString(
+            TrackMetadataResponse.serializer(),
+            // albums[].id приходит числом — JsonPrimitive.content отдаёт "555".
+            """{"result":[{"id":"42","available":true,"albums":[{"id":555},{"id":556}]}]}""",
+        )
+        assertEquals("555", resp.result.single().primaryAlbumId())
+    }
+
+    @Test
+    fun `playlist парсится в revision и упорядоченный состав (id + albumId)`() {
+        val body = YandexJson.decodeFromString(
+            PlaylistResponse.serializer(),
+            """{"result":{"kind":1000,"revision":7,"trackCount":2,"tracks":[
+                {"id":"999","albumId":"aa"},{"id":1001,"albumId":"bb"}]}}""",
+        ).result
+        assertEquals("1000", body.kindStr)
+        assertEquals(7, body.revision)
+        assertEquals(listOf("999", "1001"), body.tracks.map { it.trackId })
+        assertEquals(listOf("aa", "bb"), body.tracks.map { it.albumId })
+    }
 }
