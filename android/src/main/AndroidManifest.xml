@@ -34,6 +34,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Экран ревью серой зоны (§F4-UI): человек ставит «ИИ»/«не ИИ». Не LAUNCHER — открывается
+             из MainActivity. -->
+        <activity
+            android:name="dev.humanonly.android.ReviewActivity"
+            android:exported="false" />
     </application>
 
 </manifest>

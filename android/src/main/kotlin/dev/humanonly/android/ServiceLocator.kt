@@ -7,9 +7,12 @@ import dev.humanonly.db.LiveScanSource
 import dev.humanonly.db.SqlActionQueue
 import dev.humanonly.db.SqlActionSink
 import dev.humanonly.db.SqlBackupSource
+import dev.humanonly.db.SqlReviewSink
+import dev.humanonly.db.SqlReviewSource
 import dev.humanonly.db.SqlScanSource
 import dev.humanonly.db.SqlVerdictSink
 import dev.humanonly.db.TrackRepository
+import dev.humanonly.review.ReviewQueue
 import dev.humanonly.db.YandexLibraryReader
 import dev.humanonly.db.YandexMetaLookup
 import dev.humanonly.detector.DetectionCascade
@@ -115,6 +118,17 @@ object ServiceLocator {
      * В MVP-прогоне используется как источник scan_delta: [liveClient] → [YandexLibraryReader] →
      * [LiveScanSource] (лайки → индекс). Стадии скачивания/действий/restore — отдельные чанки с ДА.
      */
+    /**
+     * Ревью-очередь (§F4-UI) поверх того же индекса SQLite. Источник — треки `verdict='review_required'`
+     * (серая зона детекции без аудио); решение человека («ИИ»/«не ИИ») переводит verdict в
+     * ai_confirmed/human_confirmed + audit (§12). Именно так штатно рождается `ai_confirmed`, который потом
+     * забирает [SqlActionQueue] под авто-дизлайк. Валидация переходов — в [ReviewQueue] (хард-правило 10).
+     */
+    fun reviewQueue(ctx: Context): ReviewQueue {
+        val db = AndroidDb(CurationOpenHelper(ctx).writableDatabase)
+        return ReviewQueue(SqlReviewSource(db), SqlReviewSink(TrackRepository(db)))
+    }
+
     /** Хранилище токена ЯМ на аппаратном Keystore (хард-правило 3/4). */
     fun tokenStore(ctx: Context): TokenStore = KeystoreTokenStore(ctx)
 

@@ -65,6 +65,7 @@ class MainActivity : Activity() {
         root.addView(button("Сохранить токен") { onSaveToken() })
         root.addView(button("Очистить токен") { onClearToken() })
         root.addView(button("Запустить прогон сейчас") { onRunNow() })
+        root.addView(button("Ревью серой зоны") { onOpenReview() })
         root.addView(button("Обновить статус") { refresh() })
 
         return ScrollView(this).apply { addView(root) }
@@ -96,6 +97,8 @@ class MainActivity : Activity() {
         toast("Прогон поставлен в очередь")
         refresh()
     }
+
+    private fun onOpenReview() = startActivity(android.content.Intent(this, ReviewActivity::class.java))
 
     /** Собирает статус вне UI-потока (Keystore + Future WorkManager) и постит в [status]. */
     private fun refresh() {

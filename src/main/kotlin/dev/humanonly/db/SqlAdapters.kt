@@ -115,6 +115,20 @@ class TrackRepository(
         appendAudit(yandexTrackId, action = op.name.lowercase(), from = from, to = to)
     }
 
+    /**
+     * Зафиксировать решение человека из ревью-очереди (§F4, §5): перевод `verdict` в целевой узел
+     * (ai_confirmed / human_confirmed) + `last_review` + audit `review` (§12 без PII). Валидация перехода —
+     * в [dev.humanonly.review.ReviewQueue] до вызова (хард-правило 10); здесь только персист.
+     */
+    fun writeReview(yandexTrackId: String, from: TrackState, to: TrackState) {
+        val ts = now()
+        db.update(
+            "UPDATE track SET verdict = ?, last_review = ?, updated_at = ? WHERE yandex_track_id = ?",
+            listOf(to.code, ts, ts, yandexTrackId),
+        )
+        appendAudit(yandexTrackId, action = "review", from = from, to = to)
+    }
+
     /** Пометить трек заархивированным (archive_status=archived) + audit `downloaded → archived`. */
     fun writeArchived(yandexTrackId: String, from: TrackState, detectorVersion: String?) {
         val ts = now()
