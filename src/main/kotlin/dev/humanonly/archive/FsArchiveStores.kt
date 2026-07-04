@@ -54,7 +54,7 @@ class FsBlobStore(private val root: Path) : BlobStore {
  * Локальные скачанные FLAC под [root], имя файла — по trackId. Источник для upload и удаления после
  * подтверждённого архивирования (§F6). [write] — для конвейера скачивания (положить блоб перед архивацией).
  */
-class FsLocalStore(private val root: Path) : LocalStore {
+class FsLocalStore(private val root: Path) : WritableLocalStore {
 
     override fun read(trackId: String): ByteArray? {
         val p = fileFor(trackId)
@@ -66,7 +66,7 @@ class FsLocalStore(private val root: Path) : LocalStore {
     }
 
     /** Положить локальный блоб трека (атомарно). Используется скачиванием до передачи в [Archiver]. */
-    fun write(trackId: String, content: ByteArray) {
+    override fun write(trackId: String, content: ByteArray) {
         Files.createDirectories(root)
         val target = fileFor(trackId)
         val tmp = Files.createTempFile(root, ".local-", ".part")

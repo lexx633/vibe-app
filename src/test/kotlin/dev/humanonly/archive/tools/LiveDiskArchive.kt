@@ -79,9 +79,11 @@ fun main(args: Array<String>) {
     println("\n${if (ok) "OK" else "FAIL"} — файл ОСТАВЛЕН на Диске: $DISK_DEFAULT_BASE_PATH/$archivePath (+ manifest.json).")
 }
 
+private val tokenJson: Json = Json { ignoreUnknownKeys = true }
+
 /** Достаёт access_token из json-файла, ничего не логируя. */
 private fun extractAccessToken(path: Path): String {
-    val json = Json { ignoreUnknownKeys = true }.parseToJsonElement(Files.readString(path)).jsonObject
+    val json = tokenJson.parseToJsonElement(Files.readString(path)).jsonObject
     val token = json["access_token"]?.jsonPrimitive?.content
     require(!token.isNullOrBlank()) { "в файле нет непустого access_token" }
     return token

@@ -11,14 +11,22 @@ import dev.humanonly.detector.DetectionCascade
 import dev.humanonly.detector.MetadataScorer
 import dev.humanonly.detector.SloplessGate
 import dev.humanonly.detector.TrackMetaFeatures
+import dev.humanonly.archive.WritableLocalStore
 import dev.humanonly.pipeline.ActionCandidate
 import dev.humanonly.pipeline.ActionDispatcher
 import dev.humanonly.pipeline.ActionMode
 import dev.humanonly.pipeline.BackupGuard
+import dev.humanonly.pipeline.DownloadCandidate
+import dev.humanonly.pipeline.DownloadStage
+import dev.humanonly.pipeline.FetchedTrack
 import dev.humanonly.pipeline.LibraryActions
 import dev.humanonly.pipeline.ScanConveyor
 import dev.humanonly.pipeline.TrackCandidate
+import dev.humanonly.pipeline.TrackFetcher
 import dev.humanonly.pipeline.VerdictSink
+import dev.humanonly.yandex.FlacArchivePreparer
+import dev.humanonly.yandex.FlacRemux
+import dev.humanonly.yandex.Mp4FlacDemuxer
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -64,6 +72,13 @@ class CurationRunTest {
         override fun load() = m
         override fun save(manifest: ArchiveManifest) { m = manifest }
     }
+    /** Writable local, общий для DownloadStage (write) и Archiver (read/delete). */
+    private class MemWritableLocal : WritableLocalStore {
+        val files = HashMap<String, ByteArray>()
+        override fun read(trackId: String) = files[trackId]
+        override fun delete(trackId: String) { files.remove(trackId) }
+        override fun write(trackId: String, content: ByteArray) { files[trackId] = content }
+    }
 
     private fun scanOf(vararg ids: String) = ScanSource {
         ids.map { TrackCandidate(it, artistId = "999", meta = TrackMetaFeatures()) }
@@ -95,6 +110,53 @@ class CurationRunTest {
         assertEquals(1, r.action!!.applied)
         assertTrue("t9" in lib.disliked)
         assertEquals(1, r.archive!!.uploaded)
+    }
+
+    // ── проводка download→prepare→archive ────────────────────────────────────
+
+    @Test
+    fun `download стадия скачивает чистый трек и он архивируется в тот же прогон`() {
+        val raw = FlacRemux.assemble(ByteArray(34) { 5 }, byteArrayOf(1, 2, 3))
+        val fetcher = TrackFetcher { FetchedTrack(raw, quality = "lossless") }
+        val preparer = FlacArchivePreparer(object : Mp4FlacDemuxer { override fun demux(flacMp4: ByteArray) = Mp4FlacDemuxer.Demuxed(ByteArray(34), ByteArray(0)) })
+        val local = MemWritableLocal()
+        val downloadStage = DownloadStage(fetcher, preparer, local)
+        val blobs = MemBlob()
+        val archiver = Archiver(blobs, local, MemManifest())
+
+        val run = CurationRun(
+            flags = FeatureFlags(archive = true),
+            scanSource = scanOf(),
+            conveyor = conveyor(),
+            schedule = schedule,
+            downloadQueue = { listOf(DownloadCandidate("t1", verdict = "clean", detectorVersion = "det-v1")) },
+            downloadStage = downloadStage,
+            archiver = archiver,
+        )
+        val r = run.execute(DeviceState(metered = false, batteryLow = false))
+
+        assertEquals(RunOutcome.SUCCESS, r.outcome)
+        assertEquals(1, r.download!!.downloaded)
+        assertEquals(1, r.archive!!.uploaded)         // свежескачанный трек заархивирован
+        assertTrue(local.files.isEmpty(), "локальный блоб удалён после подтверждённого архива")
+        assertEquals(1, blobs.store.size)              // блоб реально лёг в архив
+    }
+
+    @Test
+    fun `archive выключен — download стадия не запускается`() {
+        val fetcher = TrackFetcher { error("не должно вызываться") }
+        val preparer = FlacArchivePreparer(object : Mp4FlacDemuxer { override fun demux(flacMp4: ByteArray) = Mp4FlacDemuxer.Demuxed(ByteArray(34), ByteArray(0)) })
+        val run = CurationRun(
+            flags = FeatureFlags(archive = false),
+            scanSource = scanOf(),
+            conveyor = conveyor(),
+            schedule = schedule,
+            downloadQueue = { listOf(DownloadCandidate("t1", verdict = "clean", detectorVersion = "v1")) },
+            downloadStage = DownloadStage(fetcher, preparer, MemWritableLocal()),
+        )
+        val r = run.execute()
+        assertEquals(RunOutcome.SUCCESS, r.outcome)
+        assertNull(r.download)
     }
 
     // ── ограничения устройства ───────────────────────────────────────────────

@@ -202,6 +202,16 @@ interface LocalStore {
 }
 
 /**
+ * Локальное хранилище с записью — для стадии скачивания (§F6: download→prepare→**write local**→archive).
+ * Отделено от [LocalStore], чтобы [Archiver] (только read/delete) не зависел от записи, а существующие
+ * fake-[LocalStore] в тестах не требовали реализовывать [write]. [FsLocalStore] реализует оба.
+ */
+interface WritableLocalStore : LocalStore {
+    /** Положить локальный блоб трека атомарно (перед передачей в [Archiver]). Перезапись идемпотентна. */
+    fun write(trackId: String, content: ByteArray)
+}
+
+/**
  * Хранилище manifest.json c **атомарным** обновлением (data-model §7). Реализация (FS/S3) обязана
  * писать через temp + atomic rename — частично записанный manifest недопустим. Здесь — контракт.
  */

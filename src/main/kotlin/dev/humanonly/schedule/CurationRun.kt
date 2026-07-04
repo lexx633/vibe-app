@@ -8,6 +8,9 @@ import dev.humanonly.pipeline.ActionCandidate
 import dev.humanonly.pipeline.ActionDispatcher
 import dev.humanonly.pipeline.ActionResult
 import dev.humanonly.pipeline.ConveyorSummary
+import dev.humanonly.pipeline.DownloadQueue
+import dev.humanonly.pipeline.DownloadStage
+import dev.humanonly.pipeline.DownloadSummary
 import dev.humanonly.pipeline.ScanConveyor
 import dev.humanonly.pipeline.TrackCandidate
 
@@ -22,7 +25,10 @@ import dev.humanonly.pipeline.TrackCandidate
  *      [dispatcher]. Хард-правило 5 соблюдён СТРУКТУРНО: `confirm=true` — это «стоячее» согласие авто-режима,
  *      но [ActionDispatcher] всё равно откажет без свежего бэкапа ([ActionResult.refusedReason]) → деструктив
  *      без бэкапа НЕ произойдёт (это не сбой прогона, а зафиксированный отказ стадии).
- *   3. **archive** (если [FeatureFlags.archive]): [archiveQueue] (скачанные `downloaded`-треки) → [archiver].
+ *   3. **download** (если [FeatureFlags.archive]): [downloadQueue] (чистые треки) → [downloadStage]
+ *      (download→prepare→write local) → свежие [ArchiveCandidate].
+ *   4. **archive** (если [FeatureFlags.archive]): свежескачанные (шаг 3) + [archiveQueue] (ранее скачанные,
+ *      но не заархивированные — resume после крэша) → [archiver].
  *
  * Итог — [RunOutcome] (зеркало WorkManager Result): исключение [TransientException] (сеть/ЯМ 5xx/капча) →
  * [RunOutcome.RETRY] (перепланирование по [BackoffPolicy]); любое другое → [RunOutcome.FAILURE]. Успех —
@@ -36,6 +42,8 @@ class CurationRun(
     private val schedule: RunSchedule,
     private val actionQueue: ActionQueue = ActionQueue.Empty,
     private val dispatcher: ActionDispatcher? = null,
+    private val downloadQueue: DownloadQueue = DownloadQueue.Empty,
+    private val downloadStage: DownloadStage? = null,
     private val archiveQueue: ArchiveQueue = ArchiveQueue.Empty,
     private val archiver: Archiver? = null,
 ) {
@@ -58,17 +66,27 @@ class CurationRun(
                     if (pending.isNotEmpty()) dispatcher.execute(pending, confirm = true) else null
                 } else null
 
-            // ── 3. archive ────────────────────────────────────────────────────
+            // ── 3. download (чистые треки: download→prepare→write local) ───────
+            val downloadSummary: DownloadSummary? =
+                if (flags.archive && downloadStage != null) {
+                    val pending = downloadQueue.pending()
+                    if (pending.isNotEmpty()) downloadStage.run(pending) else null
+                } else null
+
+            // ── 4. archive (свежескачанные + resume ранее скачанных, но не заархивированных) ──
             val archiveSummary: ArchiveSummary? =
                 if (flags.archive && archiver != null) {
-                    val pending = archiveQueue.pending()
-                    if (pending.isNotEmpty()) archiver.run(pending) else null
+                    val fresh = downloadSummary?.archiveCandidates.orEmpty()
+                    val resume = archiveQueue.pending()
+                    val all = fresh + resume
+                    if (all.isNotEmpty()) archiver.run(all) else null
                 } else null
 
             RunReport(
                 outcome = RunOutcome.SUCCESS,
                 conveyor = conveyorSummary,
                 action = actionResult,
+                download = downloadSummary,
                 archive = archiveSummary,
             )
         } catch (e: TransientException) {
@@ -118,6 +136,7 @@ data class RunReport(
     val outcome: RunOutcome,
     val conveyor: ConveyorSummary? = null,
     val action: ActionResult? = null,
+    val download: DownloadSummary? = null,
     val archive: ArchiveSummary? = null,
     val skippedReason: String? = null,
     val error: String? = null,
